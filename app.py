@@ -141,7 +141,7 @@ class DatasetGui(QMainWindow):
         self.feature_tree.setFocusPolicy(Qt.NoFocus) # 关键：不捕获焦点
         self.feature_tree.setHeaderLabel("Features & Dimensions")
         self.feature_tree.itemChanged.connect(self.on_tree_item_changed)
-        right_layout.addWidget(self.feature_tree)
+        self.right_splitter.addWidget(self.feature_tree)
         
         self.plot_scroll = QScrollArea()
         self.plot_scroll.setFocusPolicy(Qt.NoFocus)
@@ -153,15 +153,19 @@ class DatasetGui(QMainWindow):
         self.plot_scroll.setWidgetResizable(True)
         self.right_splitter.addWidget(self.plot_scroll)
         
-        # 设置右侧初始比例：列表占 20%，绘图占 80%
+        # 设置右侧初始比例：特征树更矮，绘图区更大
         self.right_splitter.setStretchFactor(0, 1)
-        self.right_splitter.setStretchFactor(1, 4)
+        self.right_splitter.setStretchFactor(1, 6)
+        self.right_splitter.setSizes([150, 800])
         
         right_layout.addWidget(self.right_splitter)
 
         self.horizontal_splitter.addWidget(right_widget)
+        # 减小左侧导航栏权重，分配更多给中间和右侧
+        self.horizontal_splitter.setStretchFactor(0, 0)
         self.horizontal_splitter.setStretchFactor(1, 2)
         self.horizontal_splitter.setStretchFactor(2, 2)
+        self.horizontal_splitter.setSizes([120, 640, 640])
         self.main_splitter.addWidget(self.horizontal_splitter)
 
         # Bottom Info Panel (保持不变)
@@ -273,12 +277,12 @@ class DatasetGui(QMainWindow):
             self.plot_layout.addWidget(pw)
             
             self.plot_curves[k] = []
-            for d in range(dims):
-                child = QTreeWidgetItem(parent)
-                child.setText(0, f"Dimension {d}" if dims > 1 else "Scalar")
-                child.setCheckState(0, Qt.Checked)
-                child.setData(0, Qt.UserRole, (k, d))
-                # Placeholder for curve will be filled in on_episode_changed
+            if dims > 1:
+                for d in range(dims):
+                    child = QTreeWidgetItem(parent)
+                    child.setText(0, f"Dimension {d}")
+                    child.setCheckState(0, Qt.Checked)
+                    child.setData(0, Qt.UserRole, (k, d))
 
     def on_tree_item_changed(self, item, column):
         """Handles visibility toggles from the tree."""
@@ -289,6 +293,8 @@ class DatasetGui(QMainWindow):
             key = item.text(0)
             if key in self.plots:
                 self.plots[key].setVisible(is_checked)
+            for i in range(item.childCount()):
+                item.child(i).setCheckState(0, item.checkState(0))
         else: # Child item (Dimension)
             key, dim = key_data
             if key in self.plot_curves and dim < len(self.plot_curves[key]):
