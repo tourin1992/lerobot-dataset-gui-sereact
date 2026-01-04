@@ -1,5 +1,6 @@
 import sys
 import warnings
+import torch
 from pathlib import Path
 from typing import Optional, Dict, List
 
@@ -15,7 +16,7 @@ from PySide6.QtWidgets import (
     QApplication, QHBoxLayout, QLabel, QLineEdit, QMainWindow,
     QPushButton, QVBoxLayout, QWidget, QMessageBox, QListWidget,
     QSlider, QSplitter, QScrollArea, QCheckBox, QGroupBox, QTextEdit,
-    QTreeWidget, QTreeWidgetItem
+    QTreeWidget, QTreeWidgetItem, QTabWidget, QMenu, QListWidgetItem
 )
 
 from processor import DatasetProcessor
@@ -66,6 +67,8 @@ class DatasetGui(QMainWindow):
         self.v_lines: Dict[str, pg.InfiniteLine] = {}
         self.current_ep_data: Dict[str, np.ndarray] = {}
         self.vector_keys = []
+        self.trim_start_frame: Optional[int] = None
+        self.trim_end_frame: Optional[int] = None
         self.init_ui()
 
     def init_ui(self):
@@ -81,16 +84,12 @@ class DatasetGui(QMainWindow):
         self.repo_input = QLineEdit("lerobot/pusht")
         self.load_btn = QPushButton("Load Dataset")
         self.load_btn.clicked.connect(self.on_load_clicked)
-        self.save_img_btn = QPushButton("Save Test Image")
-        self.save_img_btn.setEnabled(False)
-        self.save_img_btn.clicked.connect(self.save_test_image)
         self.show_info_btn = QPushButton("Show Info")
         self.show_info_btn.clicked.connect(lambda: self.info_panel.show())
         
         top_layout.addWidget(QLabel("Repo ID:"))
         top_layout.addWidget(self.repo_input)
         top_layout.addWidget(self.load_btn)
-        top_layout.addWidget(self.save_img_btn)
         top_layout.addWidget(self.show_info_btn)
         main_layout.addLayout(top_layout)
 
@@ -100,16 +99,22 @@ class DatasetGui(QMainWindow):
         
         # 1. Left: Episode List
         self.ep_list = QListWidget()
+        self.ep_list.setContextMenuPolicy(Qt.CustomContextMenu)
+        self.ep_list.customContextMenuRequested.connect(self.show_episode_context_menu)
         self.ep_list.currentRowChanged.connect(self.on_episode_changed)
         self.horizontal_splitter.addWidget(self.ep_list)
 
-        # 2. Center: Image and Slider
-        center_widget = QWidget()
-        center_layout = QVBoxLayout(center_widget)
+        # 2. Center: Image, Slider and Plots (Always Visible)
+        self.center_splitter = QSplitter(Qt.Vertical)
+        
+        # Top part: Image and Slider
+        image_slider_container = QWidget()
+        image_slider_layout = QVBoxLayout(image_slider_container)
+        
         self.image_label = QLabel("No Image")
         self.image_label.setAlignment(Qt.AlignCenter)
         self.image_label.setStyleSheet("background-color: black;")
-        center_layout.addWidget(self.image_label, stretch=1)
+        image_slider_layout.addWidget(self.image_label, stretch=1)
 
         # Slider and Labels
         slider_container = QWidget()
@@ -122,50 +127,60 @@ class DatasetGui(QMainWindow):
         labels_layout = QHBoxLayout()
         self.frame_label = QLabel("Frame: 0/0")
         self.timestamp_label = QLabel("Timestamp: 0.000s")
+        
+        # Trim buttons
+        self.mark_start_btn = QPushButton("Mark Trim Start")
+        self.mark_start_btn.clicked.connect(self.on_mark_start_clicked)
+        
+        self.mark_end_btn = QPushButton("Mark Trim End")
+        self.mark_end_btn.clicked.connect(self.on_mark_end_clicked)
+        
         labels_layout.addWidget(self.frame_label)
+        labels_layout.addWidget(self.mark_start_btn)
+        labels_layout.addWidget(self.mark_end_btn)
         labels_layout.addStretch()
         labels_layout.addWidget(self.timestamp_label)
         slider_vbox.addLayout(labels_layout)
         
-        center_layout.addWidget(slider_container)
-        self.horizontal_splitter.addWidget(center_widget)
+        image_slider_layout.addWidget(slider_container)
+        self.center_splitter.addWidget(image_slider_container)
 
-        # 3. Right: Hierarchical Selectors and Plots
-        right_widget = QWidget()
-        right_layout = QVBoxLayout(right_widget)
-
-        self.right_splitter = QSplitter(Qt.Vertical)
-        
-        # New Hierarchical Selector (Tree)
-        self.feature_tree = QTreeWidget()
-        self.feature_tree.setFocusPolicy(Qt.NoFocus) # 关键：不捕获焦点
-        self.feature_tree.setHeaderLabel("Features & Dimensions")
-        self.feature_tree.itemChanged.connect(self.on_tree_item_changed)
-        self.right_splitter.addWidget(self.feature_tree)
-        
+        # Bottom part: Plots (Now always visible in center)
         self.plot_scroll = QScrollArea()
         self.plot_scroll.setFocusPolicy(Qt.NoFocus)
         self.plot_container = QWidget()
         self.plot_layout = QVBoxLayout(self.plot_container)
-        self.plot_layout.setSpacing(10) # 设置图表间距
-        self.plot_layout.addStretch() # 底部添加弹簧
+        self.plot_layout.setSpacing(10)
+        self.plot_layout.addStretch()
         self.plot_scroll.setWidget(self.plot_container)
         self.plot_scroll.setWidgetResizable(True)
-        self.right_splitter.addWidget(self.plot_scroll)
+        self.center_splitter.addWidget(self.plot_scroll)
         
-        # 设置右侧初始比例：特征树更矮，绘图区更大
-        self.right_splitter.setStretchFactor(0, 1)
-        self.right_splitter.setStretchFactor(1, 6)
-        self.right_splitter.setSizes([150, 800])
-        
-        right_layout.addWidget(self.right_splitter)
+        # Initial proportions for center
+        self.center_splitter.setSizes([400, 500])
+        self.horizontal_splitter.addWidget(self.center_splitter)
 
-        self.horizontal_splitter.addWidget(right_widget)
-        # 减小左侧导航栏权重，分配更多给中间和右侧
+        # 3. Right: Hierarchical Selectors and Edit Tools (Wrapped in Tabs)
+        self.right_tabs = QTabWidget()
+        self.horizontal_splitter.addWidget(self.right_tabs)
+
+        # Tab 1: Features (Tree only)
+        self.feature_tree = QTreeWidget()
+        self.feature_tree.setFocusPolicy(Qt.NoFocus)
+        self.feature_tree.setHeaderLabel("Features & Dimensions")
+        self.feature_tree.itemChanged.connect(self.on_tree_item_changed)
+        self.right_tabs.addTab(self.feature_tree, "Features")
+
+        # Tab 2: Edit
+        self.edit_tab = QWidget()
+        self.init_edit_tab()
+        self.right_tabs.addTab(self.edit_tab, "Edit")
+
+        # Layout weights: Left is narrow, Center is wide (Image+Plots), Right is medium (Tree/Edit)
         self.horizontal_splitter.setStretchFactor(0, 0)
-        self.horizontal_splitter.setStretchFactor(1, 2)
-        self.horizontal_splitter.setStretchFactor(2, 2)
-        self.horizontal_splitter.setSizes([120, 640, 640])
+        self.horizontal_splitter.setStretchFactor(1, 4)
+        self.horizontal_splitter.setStretchFactor(2, 1)
+        self.horizontal_splitter.setSizes([120, 900, 380])
         self.main_splitter.addWidget(self.horizontal_splitter)
 
         # Bottom Info Panel (保持不变)
@@ -188,6 +203,419 @@ class DatasetGui(QMainWindow):
         self.status_label = QLabel("Ready")
         main_layout.addWidget(self.status_label)
 
+    def init_edit_tab(self):
+        layout = QVBoxLayout(self.edit_tab)
+        
+        # 1. Pending Operations List
+        layout.addWidget(QLabel("<b>Pending Operations:</b>"))
+        self.pending_op_list = QListWidget()
+        self.pending_op_list.setContextMenuPolicy(Qt.CustomContextMenu)
+        self.pending_op_list.customContextMenuRequested.connect(self.show_op_context_menu)
+        self.pending_op_list.setToolTip("Right click to undo a specific operation")
+        layout.addWidget(self.pending_op_list)
+        
+        self.clear_tasks_btn = QPushButton("Clear All Tasks")
+        self.clear_tasks_btn.clicked.connect(self.on_clear_tasks_clicked)
+        layout.addWidget(self.clear_tasks_btn)
+        
+        layout.addSpacing(10)
+        
+        # 2. Global Operations
+        global_group = QGroupBox("Global Operations")
+        global_layout = QVBoxLayout(global_group)
+        
+        self.batch_delete_btn = QPushButton("Batch Delete Episodes...")
+        self.batch_delete_btn.clicked.connect(self.on_batch_delete_clicked)
+        global_layout.addWidget(self.batch_delete_btn)
+        
+        self.remove_feature_btn = QPushButton("Remove Features...")
+        self.remove_feature_btn.clicked.connect(self.on_remove_feature_clicked)
+        global_layout.addWidget(self.remove_feature_btn)
+        
+        layout.addWidget(global_group)
+        
+        # 3. Local Operations
+        local_group = QGroupBox("Local Operations")
+        local_layout = QVBoxLayout(local_group)
+        
+        self.trim_frames_btn = QPushButton("Trim Selected Range")
+        self.trim_frames_btn.setEnabled(False)
+        self.trim_frames_btn.setToolTip("Mark start and end on the slider first")
+        self.trim_frames_btn.clicked.connect(self.on_trim_frames_clicked)
+        local_layout.addWidget(self.trim_frames_btn)
+        
+        self.edit_frame_btn = QPushButton("Edit Current Frame Features...")
+        self.edit_frame_btn.clicked.connect(self.on_edit_frame_clicked)
+        local_layout.addWidget(self.edit_frame_btn)
+        
+        layout.addWidget(local_group)
+
+        layout.addStretch()
+
+        # 4. Export Settings (At the bottom)
+        export_group = QGroupBox("Export Settings")
+        export_layout = QVBoxLayout(export_group)
+        
+        export_layout.addWidget(QLabel("New Repo ID:"))
+        self.new_repo_input = QLineEdit()
+        self.new_repo_input.setPlaceholderText("e.g., lerobot/pusht_modified")
+        export_layout.addWidget(self.new_repo_input)
+        
+        self.save_dataset_btn = QPushButton("Apply Edits && Save Dataset")
+        self.save_dataset_btn.setStyleSheet("background-color: #27ae60; color: white; font-weight: bold; padding: 10px;")
+        self.save_dataset_btn.clicked.connect(self.on_save_dataset_clicked)
+        export_layout.addWidget(self.save_dataset_btn)
+        
+        layout.addWidget(export_group)
+
+    def on_mark_start_clicked(self):
+        self.trim_start_frame = self.frame_slider.value()
+        # Find local frame index within episode
+        start, _ = self.processor.get_episode_range(self.ep_list.currentRow())
+        local_idx = self.trim_start_frame - start
+        self.status_label.setText(f"Marked start frame: {local_idx}")
+        self.update_trim_btn_state()
+
+    def on_mark_end_clicked(self):
+        self.trim_end_frame = self.frame_slider.value()
+        start, _ = self.processor.get_episode_range(self.ep_list.currentRow())
+        local_idx = self.trim_end_frame - start
+        self.status_label.setText(f"Marked end frame: {local_idx}")
+        self.update_trim_btn_state()
+
+    def update_trim_btn_state(self):
+        # Enable trim button if both marks are set and in the same episode
+        # (Technically they could be different episodes if we want cross-episode trimming, 
+        # but let's keep it simple for now).
+        if hasattr(self, 'trim_frames_btn'):
+            self.trim_frames_btn.setEnabled(self.trim_start_frame is not None and self.trim_end_frame is not None)
+
+    def on_edit_frame_clicked(self):
+        if not self.processor.dataset: return
+        
+        frame_idx = self.frame_slider.value()
+        try:
+            data = self.processor.get_frame(frame_idx)
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Failed to get frame data: {str(e)}")
+            return
+            
+        # Get episode info
+        ep_idx = self.ep_list.currentRow()
+        start, _ = self.processor.get_episode_range(ep_idx)
+        local_idx = frame_idx - start
+        
+        from PySide6.QtWidgets import QDialog, QFormLayout, QLineEdit
+        dialog = QDialog(self)
+        dialog.setWindowTitle(f"Edit Frame {local_idx} in Episode {ep_idx}")
+        dialog.resize(400, 500)
+        d_layout = QVBoxLayout(dialog)
+        
+        scroll = QScrollArea()
+        scroll_content = QWidget()
+        form_layout = QFormLayout(scroll_content)
+        
+        inputs = {}
+        original_data = {}
+        # Only show vector/scalar features, skip images/videos
+        for key, val in data.items():
+            if any(x in key for x in ['task', 'image', 'video', 'index', 'frame_index', 'episode_index', 'timestamp']):
+                continue
+            
+            original_data[key] = val
+            # Convert to string for editing
+            val_np = val.numpy() if hasattr(val, 'numpy') else np.array(val)
+            val_str = np.array2string(val_np, separator=',').replace('[', '').replace(']', '').replace('\n', '')
+            
+            line_edit = QLineEdit(val_str)
+            form_layout.addRow(f"{key}:", line_edit)
+            inputs[key] = line_edit
+            
+        scroll.setWidget(scroll_content)
+        scroll.setWidgetResizable(True)
+        d_layout.addWidget(scroll)
+        
+        btns_layout = QHBoxLayout()
+        ok_btn = QPushButton("Add to Tasks")
+        ok_btn.clicked.connect(dialog.accept)
+        cancel_btn = QPushButton("Cancel")
+        cancel_btn.clicked.connect(dialog.reject)
+        btns_layout.addWidget(ok_btn)
+        btns_layout.addWidget(cancel_btn)
+        d_layout.addLayout(btns_layout)
+        
+        if dialog.exec() == QDialog.Accepted:
+            new_features = {}
+            for key, line_edit in inputs.items():
+                try:
+                    orig_val = original_data[key]
+                    txt = line_edit.text().strip()
+                    clean_txt = txt.replace('[', '').replace(']', '').replace(' ', '')
+                    
+                    if not clean_txt:
+                        continue
+                    
+                    parts = [p.strip() for p in clean_txt.split(',') if p.strip()]
+                    
+                    # Determine target dtype and converter
+                    if isinstance(orig_val, torch.Tensor):
+                        target_dtype = orig_val.dtype
+                        if target_dtype == torch.bool:
+                            vals = [p.lower() in ['true', '1', 't', 'y', 'yes'] for p in parts]
+                            new_val = torch.tensor(vals, dtype=torch.bool)
+                        elif target_dtype in [torch.int64, torch.int32, torch.int16, torch.int8, torch.uint8]:
+                            vals = [int(float(p)) for p in parts]
+                            new_val = torch.tensor(vals, dtype=target_dtype)
+                        else:
+                            vals = [float(p) for p in parts]
+                            new_val = torch.tensor(vals, dtype=target_dtype)
+                        
+                        # Handle shape (if original was scalar-like tensor vs vector)
+                        if orig_val.ndim == 0 and new_val.numel() == 1:
+                            new_val = new_val.squeeze()
+                    else:
+                        # Fallback for non-tensor types
+                        if isinstance(orig_val, bool):
+                            new_val = parts[0].lower() in ['true', '1', 't', 'y', 'yes']
+                        elif isinstance(orig_val, int):
+                            new_val = int(float(parts[0]))
+                        else:
+                            new_val = float(parts[0])
+                    
+                    new_features[key] = new_val
+                except Exception as e:
+                    QMessageBox.warning(self, "Warning", f"Failed to parse {key}: {str(e)}")
+            
+            if new_features:
+                self.processor.add_frame_edit_task(ep_idx, local_idx, new_features)
+                self.refresh_edit_ui()
+                self.status_label.setText(f"Added edit task for Episode {ep_idx}, Frame {local_idx}")
+
+    def on_trim_frames_clicked(self):
+        if self.trim_start_frame is None or self.trim_end_frame is None:
+            return
+            
+        # Get episode index and local frame range
+        ep_idx = self.ep_list.currentRow()
+        ep_start, _ = self.processor.get_episode_range(ep_idx)
+        
+        start_local = self.trim_start_frame - ep_start
+        end_local = self.trim_end_frame - ep_start
+        
+        if start_local > end_local:
+            start_local, end_local = end_local, start_local
+            
+        self.processor.add_trim_task(ep_idx, start_local, end_local)
+        self.refresh_edit_ui()
+        self.status_label.setText(f"Added trim task for Episode {ep_idx}: {start_local}-{end_local}")
+        
+        # Reset marks
+        self.trim_start_frame = None
+        self.trim_end_frame = None
+        self.update_trim_btn_state()
+
+    def on_clear_tasks_clicked(self):
+        self.processor.clear_edit_tasks()
+        self.refresh_edit_ui()
+        self.status_label.setText("Edit tasks cleared")
+
+    def on_batch_delete_clicked(self):
+        from PySide6.QtWidgets import QInputDialog
+        text, ok = QInputDialog.getText(self, "Batch Delete Episodes", 
+                                       "Enter episode indices (e.g., 0, 2, 5-10):")
+        if ok and text:
+            try:
+                indices = self._parse_indices(text)
+                count = 0
+                for idx in indices:
+                    if idx < self.processor.dataset.meta.total_episodes:
+                        self.processor.add_delete_episode_task(idx)
+                        count += 1
+                self.refresh_edit_ui()
+                self.status_label.setText(f"Added {count} episodes to deletion tasks")
+            except ValueError as e:
+                QMessageBox.critical(self, "Error", f"Invalid input format: {str(e)}")
+
+    def on_remove_feature_clicked(self):
+        if not self.processor.dataset: return
+        
+        # Create a simple dialog with checkboxes
+        from PySide6.QtWidgets import QDialog, QListWidgetItem
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Select Features to Remove")
+        dialog.resize(300, 400)
+        d_layout = QVBoxLayout(dialog)
+        
+        list_widget = QListWidget()
+        features = sorted(list(self.processor.dataset.meta.features.keys()))
+        # Filter out internal/essential features that shouldn't be removed
+        internal_keys = ['index', 'frame_index', 'episode_index', 'timestamp', 'task_index']
+        features = [f for f in features if not any(k == f or f.endswith(f".{k}") for k in internal_keys)]
+        
+        for f in features:
+            item = QListWidgetItem(f)
+            item.setFlags(item.flags() | Qt.ItemIsUserCheckable)
+            # Pre-check if already in tasks
+            item.setCheckState(Qt.Checked if f in self.processor.features_to_remove else Qt.Unchecked)
+            list_widget.addItem(item)
+        
+        d_layout.addWidget(list_widget)
+        
+        btns_layout = QHBoxLayout()
+        ok_btn = QPushButton("Add to Tasks")
+        ok_btn.clicked.connect(dialog.accept)
+        cancel_btn = QPushButton("Cancel")
+        cancel_btn.clicked.connect(dialog.reject)
+        btns_layout.addWidget(ok_btn)
+        btns_layout.addWidget(cancel_btn)
+        d_layout.addLayout(btns_layout)
+        
+        if dialog.exec() == QDialog.Accepted:
+            count = 0
+            for i in range(list_widget.count()):
+                item = list_widget.item(i)
+                f_name = item.text()
+                if item.checkState() == Qt.Checked:
+                    self.processor.add_remove_feature_task(f_name)
+                    count += 1
+                else:
+                    # If it was there but now unchecked, remove from tasks
+                    if f_name in self.processor.features_to_remove:
+                        self.processor.features_to_remove.remove(f_name)
+            
+            self.refresh_edit_ui()
+            self.status_label.setText(f"Updated feature removal tasks")
+
+    def _parse_indices(self, text: str) -> List[int]:
+        """Parses strings like '0, 2, 5-10' into a list of integers."""
+        indices = set()
+        parts = [p.strip() for p in text.split(",")]
+        for part in parts:
+            if "-" in part:
+                start_str, end_str = part.split("-")
+                start, end = int(start_str), int(end_str)
+                for i in range(start, end + 1):
+                    indices.add(i)
+            else:
+                indices.add(int(part))
+        return sorted(list(indices))
+
+    def refresh_edit_ui(self):
+        self.pending_op_list.clear()
+        
+        # 1. Episode Deletions
+        for ep_idx in sorted(self.processor.to_delete_episodes):
+            item = QListWidgetItem(f"Delete Episode {ep_idx}")
+            item.setData(Qt.UserRole, {"type": "delete_episode", "idx": ep_idx})
+            self.pending_op_list.addItem(item)
+            
+        # 2. Feature Removal
+        for f_name in sorted(list(self.processor.features_to_remove)):
+            item = QListWidgetItem(f"Remove Feature: {f_name}")
+            item.setData(Qt.UserRole, {"type": "remove_feature", "name": f_name})
+            self.pending_op_list.addItem(item)
+            
+        # 3. Trim Tasks
+        for i, task in enumerate(self.processor.trim_tasks):
+            item = QListWidgetItem(f"Trim Ep {task['episode_index']}: {task['start_frame']}-{task['end_frame']}")
+            item.setData(Qt.UserRole, {"type": "trim", "idx": i})
+            self.pending_op_list.addItem(item)
+            
+        # 4. Frame Edits
+        for i, task in enumerate(self.processor.frame_edit_tasks):
+            item = QListWidgetItem(f"Edit Ep {task['episode_index']} Frame {task['frame_index']}")
+            item.setData(Qt.UserRole, {"type": "edit_frame", "idx": i})
+            self.pending_op_list.addItem(item)
+        
+        # Update default new repo id if empty
+        if self.processor.dataset and not self.new_repo_input.text():
+            self.new_repo_input.setText(f"{self.processor.dataset.repo_id}_modified")
+
+    def show_op_context_menu(self, position):
+        item = self.pending_op_list.itemAt(position)
+        if not item: return
+        
+        data = item.data(Qt.UserRole)
+        if not data: return
+        
+        menu = QMenu()
+        undo_action = menu.addAction("Undo This Operation")
+        
+        if data["type"] == "delete_episode":
+            undo_action.triggered.connect(lambda: self.undo_delete_task(data["idx"]))
+        elif data["type"] == "remove_feature":
+            undo_action.triggered.connect(lambda: self.undo_remove_feature_task(data["name"]))
+        elif data["type"] == "trim":
+            undo_action.triggered.connect(lambda: self.undo_trim_task(data["idx"]))
+        elif data["type"] == "edit_frame":
+            undo_action.triggered.connect(lambda: self.undo_edit_frame_task(data["idx"]))
+            
+        menu.exec(self.pending_op_list.mapToGlobal(position))
+
+    def undo_trim_task(self, idx):
+        if 0 <= idx < len(self.processor.trim_tasks):
+            self.processor.trim_tasks.pop(idx)
+            self.refresh_edit_ui()
+            self.status_label.setText("Undid trim task")
+
+    def undo_edit_frame_task(self, idx):
+        if 0 <= idx < len(self.processor.frame_edit_tasks):
+            self.processor.frame_edit_tasks.pop(idx)
+            self.refresh_edit_ui()
+            self.status_label.setText("Undid frame edit task")
+
+    def undo_remove_feature_task(self, f_name):
+        if f_name in self.processor.features_to_remove:
+            self.processor.features_to_remove.remove(f_name)
+            self.refresh_edit_ui()
+            self.status_label.setText(f"Undid removal of feature {f_name}")
+
+    def undo_delete_task(self, ep_idx):
+        if ep_idx in self.processor.to_delete_episodes:
+            self.processor.to_delete_episodes.remove(ep_idx)
+            self.refresh_edit_ui()
+            self.status_label.setText(f"Undid deletion of Episode {ep_idx}")
+
+    def on_save_dataset_clicked(self):
+        new_repo_id = self.new_repo_input.text().strip()
+        if not new_repo_id:
+            QMessageBox.warning(self, "Warning", "Please enter a New Repo ID")
+            return
+            
+        # Confirm overwrite if same
+        if self.processor.dataset and new_repo_id == self.processor.dataset.repo_id:
+            reply = QMessageBox.question(self, "Confirm Overwrite", 
+                                       f"New Repo ID is the same as current. Overwrite {new_repo_id}?",
+                                       QMessageBox.Yes | QMessageBox.No)
+            if reply == QMessageBox.No:
+                return
+
+        self.status_label.setText("Saving dataset... this may take a while.")
+        self.save_dataset_btn.setEnabled(False)
+        self.repaint() # Force UI update
+        
+        # Run in main thread or simple thread to avoid GUI lock
+        # For multi-tasking, we should use a proper thread, but let's fix logic first
+        try:
+            new_dataset = self.processor.apply_edits(new_repo_id)
+            QMessageBox.information(self, "Success", f"Dataset saved to {new_dataset.root}")
+            self.status_label.setText(f"Dataset saved to {new_repo_id}")
+            
+            # Reset tasks UI
+            self.refresh_edit_ui()
+            
+            # Switch back to Visualize and load new dataset
+            self.right_tabs.setCurrentIndex(0)
+            self.repo_input.setText(new_repo_id)
+            self.on_load_clicked()
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            QMessageBox.critical(self, "Error", f"Failed to save dataset: {str(e)}")
+            self.status_label.setText("Save failed")
+        finally:
+            self.save_dataset_btn.setEnabled(True)
+
     def on_load_clicked(self):
         repo_id = self.repo_input.text().strip()
         if not repo_id: return
@@ -198,10 +626,33 @@ class DatasetGui(QMainWindow):
         self.loader_thread.error.connect(self.on_load_error)
         self.loader_thread.start()
 
+    def show_episode_context_menu(self, position):
+        item = self.ep_list.itemAt(position)
+        if not item: return
+        
+        menu = QMenu()
+        ep_idx = self.ep_list.row(item)
+        
+        mark_action = menu.addAction(f"Mark Episode {ep_idx} for Deletion")
+        mark_action.triggered.connect(lambda: self.mark_episode_for_deletion(ep_idx))
+        
+        menu.exec(self.ep_list.mapToGlobal(position))
+
+    def mark_episode_for_deletion(self, ep_idx):
+        self.processor.add_delete_episode_task(ep_idx)
+        self.refresh_edit_ui()
+        self.status_label.setText(f"Episode {ep_idx} marked for deletion")
+        # Switch to Edit tab to show the change
+        self.right_tabs.setCurrentIndex(1)
+
     def on_load_finished(self, dataset):
         self.load_btn.setEnabled(True)
-        self.save_img_btn.setEnabled(True)
         self.status_label.setText("Loaded")
+        
+        # Reset tasks and UI on new load
+        self.processor.clear_edit_tasks()
+        self.new_repo_input.clear()
+        self.refresh_edit_ui()
         
         # Table-based Feature Info for Alignment
         meta = dataset.meta
@@ -459,41 +910,6 @@ class DatasetGui(QMainWindow):
     def on_load_error(self, err):
         self.load_btn.setEnabled(True)
         QMessageBox.critical(self, "Error", err)
-    
-    def save_test_image(self):
-        """Save current frame's image to disk for debugging."""
-        try:
-            frame_idx = self.frame_slider.value()
-            data = self.processor.get_frame(frame_idx)
-            img_keys = [k for k in data.keys() if 'image' in k]
-            if img_keys:
-                img_data = data[img_keys[0]]
-                
-                from PIL import Image as PILImage
-                
-                if hasattr(img_data, 'numpy'):  # Torch Tensor
-                    img_np = img_data.numpy()
-                    if img_np.ndim == 3 and img_np.shape[0] in [1, 3, 4]:
-                        img_np = np.transpose(img_np, (1, 2, 0))
-                    if img_np.dtype in [np.float32, np.float64]:
-                        if img_np.max() <= 1.0:
-                            img_np = (img_np * 255).astype(np.uint8)
-                        else:
-                            img_np = img_np.astype(np.uint8)
-                    pil_img = PILImage.fromarray(img_np)
-                elif hasattr(img_data, 'convert'):  # PIL Image
-                    pil_img = img_data.convert('RGB')
-                else:
-                    pil_img = PILImage.fromarray(np.array(img_data))
-                
-                filename = f"test_frame_{frame_idx}.png"
-                pil_img.save(filename)
-                self.status_label.setText(f"Saved to {filename}")
-                QMessageBox.information(self, "Success", f"Image saved to {filename}")
-        except Exception as e:
-            QMessageBox.critical(self, "Error", f"Failed to save: {str(e)}")
-            import traceback
-            traceback.print_exc()
 
     def keyPressEvent(self, event):
         # 强制让 slider 或 list 处理，或者直接由 window 处理

@@ -45,4 +45,13 @@
 
 ## TODO
 - [ ] 增加数据集编辑功能
+   - 全局（对所有episode生效）
+   - [x] 删除episode
+   - [x] 保存到新数据集
+   - [x] 删除指定feature
+   - [ ] 增加指定feature
+   - 局部（对特定episode）
+   - [ ] 删除指定frames(剪切？)
+   - [ ] 修改指定frame的feature
+- [ ] 增加英文版readme
 

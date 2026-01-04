@@ -1,5 +1,5 @@
 pyside6
-lerobot
+lerobot==0.4.2
 pandas
 tqdm
 numpy
