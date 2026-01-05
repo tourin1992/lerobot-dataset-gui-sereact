@@ -38,7 +38,7 @@ A PySide6-based graphical interface tool for viewing and editing LeRobot format 
 1. Clone the repository:
    ```bash
    git clone https://github.com/shlyang/lerobot-dataset-gui.git
-   cd lerobot_dataset_processor
+   cd lerobot-dataset-gui
    ```
 
 2. Install dependencies:
@@ -72,7 +72,7 @@ A PySide6-based graphical interface tool for viewing and editing LeRobot format 
 
 ## Project Structure
 ```
-lerobot_dataset_processor/
+lerobot-dataset-gui/
 ├── app.py              # GUI implementation (PySide6 + PyQtGraph)
 ├── processor.py        # Dataset loading and processing logic
 ├── requirements.txt    # Project dependencies

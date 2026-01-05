@@ -38,7 +38,7 @@
 1. 克隆仓库：
    ```bash
    git clone https://github.com/shlyang/lerobot-dataset-gui.git
-   cd lerobot_dataset_processor
+   cd lerobot-dataset-gui
    ```
 
 2. 安装依赖：
@@ -72,7 +72,7 @@
 
 ## 项目结构
 ```
-lerobot_dataset_processor/
+lerobot-dataset-gui/
 ├── app.py              # GUI 界面实现（PySide6 + PyQtGraph）
 ├── processor.py        # 数据集加载与处理逻辑
 ├── requirements.txt    # 项目依赖
