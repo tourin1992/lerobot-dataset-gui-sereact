@@ -190,7 +190,7 @@ class DatasetGui(QMainWindow):
         self.info_display.setReadOnly(True)
         self.info_panel_layout.addWidget(self.info_display)
         close_btn = QPushButton("×")
-        close_btn.setFixedSize(20, 20)
+        close_btn.setFixedSize(24, 24)
         close_btn.clicked.connect(self.info_panel.hide)
         self.info_panel_layout.addWidget(close_btn, alignment=Qt.AlignTop)
         self.info_panel.hide()
