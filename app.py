@@ -1,4 +1,5 @@
 import sys
+import os
 import warnings
 import torch
 from pathlib import Path
@@ -17,7 +18,7 @@ from PySide6.QtWidgets import (
     QPushButton, QVBoxLayout, QWidget, QMessageBox, QListWidget,
     QSlider, QSplitter, QScrollArea, QCheckBox, QGroupBox, QTextEdit,
     QTreeWidget, QTreeWidgetItem, QTabWidget, QMenu, QListWidgetItem,
-    QGridLayout, QStackedWidget
+    QGridLayout, QStackedWidget, QFileDialog
 )
 
 from processor import DatasetProcessor
@@ -86,6 +87,8 @@ class DatasetGui(QMainWindow):
         # Top Bar (保持不变)
         top_layout = QHBoxLayout()
         self.repo_input = QLineEdit("lerobot/pusht")
+        self.choose_dataset_btn = QPushButton("Choose Dataset")
+        self.choose_dataset_btn.clicked.connect(self.on_choose_dataset_clicked)
         self.load_btn = QPushButton("Load Dataset")
         self.load_btn.clicked.connect(self.on_load_clicked)
         self.show_info_btn = QPushButton("Show Info")
@@ -93,6 +96,7 @@ class DatasetGui(QMainWindow):
         
         top_layout.addWidget(QLabel("Repo ID:"))
         top_layout.addWidget(self.repo_input)
+        top_layout.addWidget(self.choose_dataset_btn)
         top_layout.addWidget(self.load_btn)
         top_layout.addWidget(self.show_info_btn)
         main_layout.addLayout(top_layout)
@@ -639,6 +643,49 @@ class DatasetGui(QMainWindow):
             self.status_label.setText("Save failed")
         finally:
             self.save_dataset_btn.setEnabled(True)
+
+    def on_choose_dataset_clicked(self):
+        """Open a folder browser dialog to choose a dataset."""
+        # Get the default path based on current username
+        username = os.getenv('USER') or os.getenv('USERNAME') or 'user'
+        default_path = Path.home() / '.cache' / 'huggingface' / 'lerobot' / 'sereact'
+        
+        # Create the directory if it doesn't exist (for convenience)
+        default_path.mkdir(parents=True, exist_ok=True)
+        
+        # Open folder dialog
+        folder = QFileDialog.getExistingDirectory(
+            self,
+            "Choose Dataset",
+            str(default_path),
+            QFileDialog.ShowDirsOnly | QFileDialog.DontResolveSymlinks
+        )
+        
+        if folder:
+            # Convert the selected path to a repo_id format
+            folder_path = Path(folder)
+            
+            # Try to extract repo_id from the path
+            # Expected structure: ~/.cache/huggingface/lerobot/{org}/{dataset_name}
+            # So we want to get the last two parts as "org/dataset_name"
+            try:
+                parts = folder_path.parts
+                # Find 'lerobot' in path and take the next two parts
+                if 'lerobot' in parts:
+                    lerobot_idx = parts.index('lerobot')
+                    if len(parts) > lerobot_idx + 2:
+                        repo_id = f"{parts[lerobot_idx + 1]}/{parts[lerobot_idx + 2]}"
+                        self.repo_input.setText(repo_id)
+                        return
+                # Fallback: just use the last two parts
+                if len(parts) >= 2:
+                    repo_id = f"{parts[-2]}/{parts[-1]}"
+                    self.repo_input.setText(repo_id)
+                else:
+                    self.repo_input.setText(folder_path.name)
+            except Exception:
+                # If all else fails, just use the folder name
+                self.repo_input.setText(folder_path.name)
 
     def on_load_clicked(self):
         repo_id = self.repo_input.text().strip()
