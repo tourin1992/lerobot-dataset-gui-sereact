@@ -1041,6 +1041,33 @@
             updatePlots();
         }
         
+        // Color palettes for each group
+        const colorPalettes = {
+            // Blue shades for left joints
+            left: [
+                '#1abc9c', '#3498db', '#2980b9', '#00bcd4', '#0097a7',
+                '#26c6da', '#4dd0e1', '#00acc1', '#0288d1', '#039be5',
+                '#00796b', '#009688', '#4db6ac', '#26a69a', '#80cbc4'
+            ],
+            // Red/orange shades for right joints
+            right: [
+                '#e74c3c', '#c0392b', '#e91e63', '#f44336', '#ff5722',
+                '#ff7043', '#d32f2f', '#c62828', '#e53935', '#ef5350',
+                '#ff8a65', '#ff7043', '#f4511e', '#e64a19', '#d84315'
+            ],
+            // Various colors for other joints
+            other: [
+                '#9b59b6', '#8e44ad', '#673ab7', '#7c4dff', '#aa00ff',
+                '#f39c12', '#f1c40f', '#ffeb3b', '#ffc107', '#ff9800',
+                '#795548', '#607d8b', '#9e9e9e', '#8bc34a', '#cddc39'
+            ]
+        };
+        
+        function getColorForDim(group, indexInGroup) {
+            const palette = colorPalettes[group] || colorPalettes.other;
+            return palette[indexInGroup % palette.length];
+        }
+        
         function updatePlots() {
             ['action', 'observation.state'].forEach(featureKey => {
                 const data = state.episodeData[featureKey];
@@ -1060,6 +1087,9 @@
                 
                 container.classList.remove('hidden');
                 
+                // Count indices within each group for color assignment
+                const groupCounters = { left: 0, right: 0, other: 0 };
+                
                 const traces = [];
                 
                 Object.entries(visibility).forEach(([dimIdx, dimInfo]) => {
@@ -1068,17 +1098,16 @@
                     const idx = parseInt(dimIdx);
                     const y = data.map(frame => frame[idx]);
                     
-                    let color;
-                    if (dimInfo.group === 'left') color = '#3498db';
-                    else if (dimInfo.group === 'right') color = '#e74c3c';
-                    else color = undefined;  // Default Plotly colors
+                    // Get unique color based on group and position within group
+                    const color = getColorForDim(dimInfo.group, groupCounters[dimInfo.group]);
+                    groupCounters[dimInfo.group]++;
                     
                     traces.push({
                         y: y,
                         name: dimInfo.name,
                         type: 'scatter',
                         mode: 'lines',
-                        line: color ? { color: color } : undefined
+                        line: { color: color }
                     });
                 });
                 
