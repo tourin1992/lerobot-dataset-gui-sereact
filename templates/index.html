@@ -1,0 +1,1230 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LeRobot Dataset Visualizer</title>
+    <script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
+    <style>
+        :root {
+            --bg-primary: #1a1a2e;
+            --bg-secondary: #16213e;
+            --bg-tertiary: #0f3460;
+            --accent: #e94560;
+            --accent-green: #27ae60;
+            --accent-yellow: #f39c12;
+            --accent-blue: #3498db;
+            --accent-red: #e74c3c;
+            --text-primary: #eee;
+            --text-secondary: #aaa;
+            --border: #333;
+        }
+        
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            height: 100vh;
+            overflow: hidden;
+        }
+        
+        .container {
+            display: grid;
+            grid-template-columns: 220px 1fr 280px;
+            grid-template-rows: 50px 1fr;
+            height: 100vh;
+            gap: 1px;
+            background: var(--border);
+        }
+        
+        /* Header */
+        .header {
+            grid-column: 1 / -1;
+            background: var(--bg-secondary);
+            display: flex;
+            align-items: center;
+            padding: 0 15px;
+            gap: 12px;
+        }
+        
+        .header h1 {
+            font-size: 1.1rem;
+            color: var(--accent);
+            margin-right: 15px;
+        }
+        
+        .header select, .header button {
+            padding: 6px 12px;
+            border: 1px solid var(--border);
+            border-radius: 4px;
+            background: var(--bg-tertiary);
+            color: var(--text-primary);
+            cursor: pointer;
+            font-size: 0.85rem;
+        }
+        
+        .header button:hover {
+            background: var(--accent);
+        }
+        
+        .header .info {
+            margin-left: auto;
+            color: var(--text-secondary);
+            font-size: 0.85rem;
+        }
+        
+        /* Sidebar - Episode List */
+        .sidebar {
+            background: var(--bg-secondary);
+            overflow-y: auto;
+            padding: 8px;
+        }
+        
+        .sidebar h3 {
+            padding: 8px;
+            border-bottom: 1px solid var(--border);
+            margin-bottom: 8px;
+            font-size: 0.85rem;
+            color: var(--text-secondary);
+        }
+        
+        .episode-list {
+            list-style: none;
+        }
+        
+        .episode-item {
+            padding: 8px 12px;
+            cursor: pointer;
+            border-radius: 4px;
+            margin-bottom: 2px;
+            transition: background 0.2s;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 0.85rem;
+        }
+        
+        .episode-item:hover {
+            background: var(--bg-tertiary);
+        }
+        
+        .episode-item.active {
+            background: var(--accent);
+        }
+        
+        .episode-item.approved {
+            color: var(--accent-green);
+        }
+        
+        .episode-item.commented {
+            color: var(--accent-yellow);
+        }
+        
+        .episode-item .status-icon {
+            font-size: 0.75rem;
+        }
+        
+        /* Main Content */
+        .main-content {
+            background: var(--bg-primary);
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+        
+        /* Camera Grid */
+        .camera-grid {
+            flex: 1 1 auto;
+            display: grid;
+            gap: 3px;
+            padding: 3px;
+            background: #000;
+            min-height: 200px;
+            overflow: hidden;
+        }
+        
+        .camera-grid.cols-1 { grid-template-columns: 1fr; }
+        .camera-grid.cols-2 { grid-template-columns: repeat(2, 1fr); grid-template-rows: repeat(2, 1fr); }
+        .camera-grid.cols-3 { grid-template-columns: repeat(3, 1fr); }
+        .camera-grid.cols-4 { grid-template-columns: repeat(4, 1fr); }
+        
+        .camera-cell {
+            position: relative;
+            background: #111;
+            border-radius: 3px;
+            overflow: hidden;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        .camera-cell img {
+            max-width: 100%;
+            max-height: 100%;
+            width: auto;
+            height: auto;
+            object-fit: contain;
+        }
+        
+        .camera-cell .camera-label {
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            background: rgba(0, 0, 0, 0.7);
+            color: var(--text-primary);
+            padding: 4px 8px;
+            font-size: 0.7rem;
+            text-align: center;
+        }
+        
+        /* Video Controls */
+        .video-controls {
+            background: rgba(0, 0, 0, 0.9);
+            padding: 10px 15px;
+        }
+        
+        .slider-container {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin-bottom: 8px;
+        }
+        
+        .frame-slider {
+            flex: 1;
+            height: 5px;
+            -webkit-appearance: none;
+            background: var(--bg-tertiary);
+            border-radius: 3px;
+            cursor: pointer;
+        }
+        
+        .frame-slider::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            width: 14px;
+            height: 14px;
+            background: var(--accent);
+            border-radius: 50%;
+            cursor: pointer;
+        }
+        
+        .frame-info {
+            font-size: 0.8rem;
+            color: var(--text-secondary);
+            min-width: 100px;
+        }
+        
+        .playback-controls {
+            display: flex;
+            gap: 8px;
+            align-items: center;
+        }
+        
+        .playback-controls button {
+            padding: 6px 12px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-weight: bold;
+            font-size: 0.8rem;
+            transition: transform 0.1s;
+        }
+        
+        .playback-controls button:active {
+            transform: scale(0.95);
+        }
+        
+        .btn-play { background: #3498db; color: white; }
+        .btn-play.active { background: #2980b9; box-shadow: 0 0 10px #3498db; }
+        .btn-2x { background: #9b59b6; color: white; }
+        .btn-2x.active { background: #8e44ad; box-shadow: 0 0 10px #9b59b6; }
+        .btn-stop { background: #95a5a6; color: white; }
+        .btn-approve { background: var(--accent-green); color: white; }
+        .btn-approve.approved { background: #c0392b; }
+        .btn-comment { background: var(--accent-yellow); color: white; }
+        
+        /* Plot Area */
+        .plot-area {
+            flex: 0 0 auto;
+            max-height: 35vh;
+            overflow-y: auto;
+            padding: 8px;
+        }
+        
+        .plot-container {
+            background: white;
+            border-radius: 6px;
+            margin-bottom: 8px;
+            overflow: hidden;
+        }
+        
+        .plot-container.hidden {
+            display: none;
+        }
+        
+        /* Right Panel */
+        .right-panel {
+            background: var(--bg-secondary);
+            padding: 10px;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+        }
+        
+        .right-panel h3 {
+            margin-bottom: 10px;
+            padding-bottom: 8px;
+            border-bottom: 1px solid var(--border);
+            font-size: 0.85rem;
+            color: var(--text-secondary);
+        }
+        
+        .task-display {
+            background: var(--bg-tertiary);
+            padding: 10px;
+            border-radius: 6px;
+            margin-bottom: 12px;
+            border-left: 3px solid var(--accent);
+        }
+        
+        .task-display h4 {
+            color: var(--accent);
+            margin-bottom: 6px;
+            font-size: 0.75rem;
+        }
+        
+        .task-display p {
+            font-size: 0.8rem;
+            line-height: 1.4;
+        }
+        
+        .info-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 8px;
+            margin-bottom: 12px;
+        }
+        
+        .info-item {
+            background: var(--bg-tertiary);
+            padding: 8px;
+            border-radius: 4px;
+        }
+        
+        .info-item .label {
+            font-size: 0.65rem;
+            color: var(--text-secondary);
+            margin-bottom: 2px;
+        }
+        
+        .info-item .value {
+            font-size: 0.95rem;
+            font-weight: bold;
+        }
+        
+        /* Feature Tree */
+        .feature-tree-section {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            min-height: 0;
+        }
+        
+        .feature-tree {
+            flex: 1;
+            overflow-y: auto;
+            background: var(--bg-tertiary);
+            border-radius: 6px;
+            padding: 8px;
+        }
+        
+        .tree-item {
+            margin-bottom: 2px;
+        }
+        
+        .tree-header {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            padding: 4px 6px;
+            border-radius: 3px;
+            cursor: pointer;
+            font-size: 0.8rem;
+        }
+        
+        .tree-header:hover {
+            background: rgba(255, 255, 255, 0.05);
+        }
+        
+        .tree-header input[type="checkbox"] {
+            cursor: pointer;
+        }
+        
+        .tree-header .expand-btn {
+            width: 16px;
+            font-size: 0.7rem;
+            color: var(--text-secondary);
+        }
+        
+        .tree-children {
+            margin-left: 22px;
+        }
+        
+        .tree-children.collapsed {
+            display: none;
+        }
+        
+        .group-left { color: var(--accent-blue); }
+        .group-right { color: var(--accent-red); }
+        .group-other { color: var(--text-secondary); }
+        
+        .dim-item {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            padding: 2px 6px;
+            font-size: 0.75rem;
+            cursor: pointer;
+        }
+        
+        .dim-item:hover {
+            background: rgba(255, 255, 255, 0.03);
+        }
+        
+        .dim-item.left { color: var(--accent-blue); }
+        .dim-item.right { color: var(--accent-red); }
+        
+        /* Comment Section */
+        .comment-section {
+            margin-top: 10px;
+            padding-top: 10px;
+            border-top: 1px solid var(--border);
+        }
+        
+        .comment-section textarea {
+            width: 100%;
+            padding: 8px;
+            border: 1px solid var(--border);
+            border-radius: 4px;
+            background: var(--bg-tertiary);
+            color: var(--text-primary);
+            resize: vertical;
+            min-height: 60px;
+            margin-bottom: 8px;
+            font-size: 0.8rem;
+        }
+        
+        /* Loading Overlay */
+        .loading-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.8);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+        }
+        
+        .loading-overlay.hidden {
+            display: none;
+        }
+        
+        .spinner {
+            width: 40px;
+            height: 40px;
+            border: 3px solid var(--bg-tertiary);
+            border-top-color: var(--accent);
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+        
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body>
+    <div class="loading-overlay hidden" id="loading">
+        <div class="spinner"></div>
+    </div>
+    
+    <div class="container">
+        <!-- Header -->
+        <header class="header">
+            <h1>🤖 LeRobot Viewer</h1>
+            <select id="dataset-select">
+                <option value="">Select Dataset...</option>
+            </select>
+            <button onclick="loadSelectedDataset()">Load</button>
+            <div class="info" id="dataset-info"></div>
+        </header>
+        
+        <!-- Sidebar - Episode List -->
+        <aside class="sidebar">
+            <h3>Episodes</h3>
+            <ul class="episode-list" id="episode-list"></ul>
+        </aside>
+        
+        <!-- Main Content -->
+        <main class="main-content">
+            <!-- Camera Grid -->
+            <div class="camera-grid cols-2" id="camera-grid">
+                <!-- Cameras will be populated dynamically -->
+            </div>
+            
+            <!-- Video Controls -->
+            <div class="video-controls">
+                <div class="slider-container">
+                    <input type="range" class="frame-slider" id="frame-slider" min="0" max="100" value="0">
+                    <span class="frame-info" id="frame-info">Frame: 0/0</span>
+                </div>
+                <div class="playback-controls">
+                    <button class="btn-play" id="btn-1x" onclick="togglePlayback(1)">▶ 1x</button>
+                    <button class="btn-2x" id="btn-2x" onclick="togglePlayback(2)">▶ 2x</button>
+                    <button class="btn-stop" onclick="stopPlayback()">⏹</button>
+                    <button class="btn-approve" id="btn-approve" onclick="toggleApproval()">Approve</button>
+                    <button class="btn-comment" onclick="showCommentDialog()">Comment</button>
+                </div>
+            </div>
+            
+            <!-- Plot Area -->
+            <div class="plot-area" id="plot-area">
+                <div class="plot-container" id="plot-action"></div>
+                <div class="plot-container" id="plot-state"></div>
+            </div>
+        </main>
+        
+        <!-- Right Panel -->
+        <aside class="right-panel">
+            <h3>Episode Info</h3>
+            
+            <div class="task-display" id="task-display">
+                <h4>Task</h4>
+                <p id="task-text">No task loaded</p>
+            </div>
+            
+            <div class="info-grid">
+                <div class="info-item">
+                    <div class="label">Episode</div>
+                    <div class="value" id="current-episode">-</div>
+                </div>
+                <div class="info-item">
+                    <div class="label">Frames</div>
+                    <div class="value" id="episode-frames">-</div>
+                </div>
+                <div class="info-item">
+                    <div class="label">Status</div>
+                    <div class="value" id="episode-status">-</div>
+                </div>
+                <div class="info-item">
+                    <div class="label">FPS</div>
+                    <div class="value" id="dataset-fps">-</div>
+                </div>
+            </div>
+            
+            <!-- Feature Tree -->
+            <div class="feature-tree-section">
+                <h3>Joint Visibility</h3>
+                <div class="feature-tree" id="feature-tree">
+                    <!-- Tree will be populated dynamically -->
+                </div>
+            </div>
+            
+            <!-- Comment Section -->
+            <div class="comment-section">
+                <h3 style="margin-top: 0; border: none; padding: 0;">Comment</h3>
+                <textarea id="comment-text" placeholder="Enter comment..."></textarea>
+                <button class="btn-comment" onclick="saveComment()" style="width: 100%; font-size: 0.8rem;">Save Comment</button>
+            </div>
+        </aside>
+    </div>
+    
+    <script>
+        // State
+        let state = {
+            episodes: [],
+            currentEpisode: -1,
+            frameStart: 0,
+            frameEnd: 0,
+            currentFrame: 0,
+            displayedFrame: -1,  // Last frame actually shown
+            fps: 30,
+            playing: false,
+            playbackSpeed: 1,
+            playbackTimer: null,
+            cameras: [],
+            frameLoadPending: false,
+            frameErrorCount: 0,
+            maxFrameErrors: 5,
+            isDragging: false,
+            scrubRequestId: 0,  // ID to track/cancel scrub requests
+            // Episode data for plots
+            episodeData: null,
+            dimNames: {},
+            // Feature visibility state
+            featureVisibility: {
+                action: {},
+                'observation.state': {}
+            }
+        };
+        
+        // Initialize
+        document.addEventListener('DOMContentLoaded', () => {
+            loadDatasetList();
+            
+            const slider = document.getElementById('frame-slider');
+            
+            // Start dragging - stop playback and set dragging flag
+            slider.addEventListener('mousedown', () => {
+                if (state.playing) stopPlayback();
+                state.isDragging = true;
+                state.scrubRequestId++;  // Invalidate any pending requests
+            });
+            slider.addEventListener('touchstart', () => {
+                if (state.playing) stopPlayback();
+                state.isDragging = true;
+                state.scrubRequestId++;
+            });
+            
+            // While dragging - show live preview (throttled)
+            slider.addEventListener('input', (e) => {
+                state.currentFrame = parseInt(e.target.value);
+                document.getElementById('frame-info').textContent = 
+                    `Frame: ${state.currentFrame - state.frameStart}/${state.frameEnd - state.frameStart}`;
+                
+                // Load frame if not already loading one
+                if (!state.frameLoadPending) {
+                    scrubToFrame(state.currentFrame);
+                }
+            });
+            
+            // End dragging - ensure final frame is shown, then stop
+            slider.addEventListener('mouseup', onScrubEnd);
+            slider.addEventListener('touchend', onScrubEnd);
+            slider.addEventListener('change', onScrubEnd);
+            
+            // Handle mouse leaving the window while dragging
+            document.addEventListener('mouseup', () => {
+                if (state.isDragging) onScrubEnd();
+            });
+        });
+        
+        function onScrubEnd() {
+            if (!state.isDragging) return;
+            state.isDragging = false;
+            state.scrubRequestId++;  // Cancel any pending scrub loads
+            state.frameLoadPending = false;
+            
+            // Load the final frame position
+            updateAllFrames();
+        }
+        
+        // Throttled frame loading for scrubbing
+        function scrubToFrame(frameIdx) {
+            const requestId = ++state.scrubRequestId;
+            state.frameLoadPending = true;
+            
+            const cacheBreaker = Date.now();
+            let loadedCount = 0;
+            const totalCameras = state.cameras.length;
+            
+            state.cameras.forEach(cam => {
+                const imgId = `camera-${cam.replace(/\./g, '-')}`;
+                const img = document.getElementById(imgId);
+                if (!img) {
+                    loadedCount++;
+                    return;
+                }
+                
+                const frameUrl = `/api/frame/${frameIdx}?camera=${cam}&t=${cacheBreaker}`;
+                const tempImg = new Image();
+                
+                tempImg.onload = () => {
+                    // Only update if this request is still valid (not cancelled)
+                    if (state.scrubRequestId === requestId) {
+                        img.src = tempImg.src;
+                        state.displayedFrame = frameIdx;
+                    }
+                    loadedCount++;
+                    if (loadedCount >= totalCameras) {
+                        state.frameLoadPending = false;
+                        // If still dragging and frame changed, load next
+                        if (state.isDragging && state.currentFrame !== frameIdx) {
+                            scrubToFrame(state.currentFrame);
+                        }
+                    }
+                };
+                
+                tempImg.onerror = () => {
+                    loadedCount++;
+                    if (loadedCount >= totalCameras) {
+                        state.frameLoadPending = false;
+                    }
+                };
+                
+                tempImg.src = frameUrl;
+            });
+            
+            // Handle case with no cameras
+            if (totalCameras === 0) {
+                state.frameLoadPending = false;
+            }
+        }
+        
+        // API Functions
+        async function api(endpoint, options = {}) {
+            const response = await fetch(endpoint, {
+                ...options,
+                headers: {
+                    'Content-Type': 'application/json',
+                    ...options.headers
+                }
+            });
+            return response.json();
+        }
+        
+        async function loadDatasetList() {
+            const datasets = await api('/api/datasets');
+            const select = document.getElementById('dataset-select');
+            
+            datasets.forEach(ds => {
+                const option = document.createElement('option');
+                option.value = ds.repo_id;
+                option.textContent = ds.name;
+                select.appendChild(option);
+            });
+        }
+        
+        async function loadSelectedDataset() {
+            const select = document.getElementById('dataset-select');
+            const repoId = select.value;
+            
+            if (!repoId) return;
+            
+            showLoading(true);
+            
+            try {
+                const result = await api('/api/load', {
+                    method: 'POST',
+                    body: JSON.stringify({ repo_id: repoId })
+                });
+                
+                if (result.success) {
+                    state.fps = result.fps || 30;
+                    document.getElementById('dataset-info').textContent = 
+                        `${result.total_episodes} episodes | ${result.total_frames} frames | ${result.fps} fps`;
+                    document.getElementById('dataset-fps').textContent = result.fps;
+                    
+                    await loadEpisodes();
+                    await loadCameras();
+                    
+                    if (state.episodes.length > 0) {
+                        selectEpisode(0);
+                    }
+                } else {
+                    alert('Failed to load dataset: ' + result.error);
+                }
+            } finally {
+                showLoading(false);
+            }
+        }
+        
+        async function loadEpisodes() {
+            state.episodes = await api('/api/episodes');
+            renderEpisodeList();
+        }
+        
+        async function loadCameras() {
+            state.cameras = await api('/api/cameras');
+            renderCameraGrid();
+        }
+        
+        function renderCameraGrid() {
+            const grid = document.getElementById('camera-grid');
+            grid.innerHTML = '';
+            
+            // Determine grid columns based on camera count
+            const numCameras = state.cameras.length;
+            grid.className = 'camera-grid';
+            if (numCameras <= 1) grid.classList.add('cols-1');
+            else if (numCameras <= 2) grid.classList.add('cols-2');
+            else if (numCameras <= 4) grid.classList.add('cols-2');
+            else grid.classList.add('cols-3');
+            
+            state.cameras.forEach(cam => {
+                const cell = document.createElement('div');
+                cell.className = 'camera-cell';
+                
+                const img = document.createElement('img');
+                img.id = `camera-${cam.replace(/\./g, '-')}`;
+                img.alt = cam;
+                
+                const label = document.createElement('div');
+                label.className = 'camera-label';
+                label.textContent = cam.split('.').pop();
+                
+                cell.appendChild(img);
+                cell.appendChild(label);
+                grid.appendChild(cell);
+            });
+        }
+        
+        function renderEpisodeList() {
+            const list = document.getElementById('episode-list');
+            list.innerHTML = '';
+            
+            state.episodes.forEach((ep, idx) => {
+                const li = document.createElement('li');
+                li.className = `episode-item ${ep.status}`;
+                if (idx === state.currentEpisode) li.classList.add('active');
+                
+                let icon = '';
+                if (ep.status === 'approved') icon = '✓';
+                else if (ep.status === 'commented') icon = '💬';
+                
+                li.innerHTML = `
+                    <span class="status-icon">${icon}</span>
+                    <span>Episode ${ep.index}</span>
+                `;
+                li.onclick = () => selectEpisode(idx);
+                li.title = ep.task || '';
+                list.appendChild(li);
+            });
+        }
+        
+        async function selectEpisode(idx) {
+            stopPlayback();
+            state.currentEpisode = idx;
+            
+            const ep = state.episodes[idx];
+            const range = await api(`/api/episode/${idx}/range`);
+            
+            state.frameStart = range.start;
+            state.frameEnd = range.end;
+            state.currentFrame = range.start;
+            
+            const slider = document.getElementById('frame-slider');
+            slider.min = range.start;
+            slider.max = range.end;
+            slider.value = range.start;
+            
+            document.getElementById('current-episode').textContent = idx;
+            document.getElementById('episode-frames').textContent = range.end - range.start + 1;
+            document.getElementById('episode-status').textContent = ep.status;
+            document.getElementById('task-text').textContent = ep.task || 'No task description';
+            document.getElementById('comment-text').value = ep.comment || '';
+            
+            updateApproveButton(ep.status);
+            renderEpisodeList();
+            updateAllFrames();
+            await loadEpisodeData(idx);
+        }
+        
+        function updateAllFrames(skipIfPending = false) {
+            if (skipIfPending && state.frameLoadPending) {
+                return;
+            }
+            
+            const cacheBreaker = Date.now();
+            let loadingCount = state.cameras.length;
+            state.frameLoadPending = true;
+            
+            state.cameras.forEach(cam => {
+                const imgId = `camera-${cam.replace(/\./g, '-')}`;
+                const img = document.getElementById(imgId);
+                if (!img) return;
+                
+                const frameUrl = `/api/frame/${state.currentFrame}?camera=${cam}&t=${cacheBreaker}`;
+                
+                const tempImg = new Image();
+                tempImg.onload = () => {
+                    img.src = tempImg.src;
+                    loadingCount--;
+                    if (loadingCount <= 0) {
+                        state.frameLoadPending = false;
+                        state.frameErrorCount = 0;
+                    }
+                };
+                tempImg.onerror = () => {
+                    loadingCount--;
+                    if (loadingCount <= 0) {
+                        state.frameLoadPending = false;
+                    }
+                    state.frameErrorCount++;
+                    if (state.frameErrorCount >= state.maxFrameErrors && state.playing) {
+                        stopPlayback();
+                        alert('Video playback stopped due to decoding errors.');
+                    }
+                };
+                tempImg.src = frameUrl;
+            });
+            
+            document.getElementById('frame-slider').value = state.currentFrame;
+            document.getElementById('frame-info').textContent = 
+                `Frame: ${state.currentFrame - state.frameStart}/${state.frameEnd - state.frameStart}`;
+        }
+        
+        async function loadEpisodeData(idx) {
+            const data = await api(`/api/episode/${idx}/data`);
+            
+            state.episodeData = data.data || {};
+            state.dimNames = data.dim_names || {};
+            
+            // Initialize visibility state and build feature tree
+            initializeFeatureVisibility();
+            renderFeatureTree();
+            updatePlots();
+        }
+        
+        function initializeFeatureVisibility() {
+            ['action', 'observation.state'].forEach(featureKey => {
+                if (!state.episodeData[featureKey]) return;
+                
+                const data = state.episodeData[featureKey];
+                const numDims = data[0]?.length || 0;
+                const dimNames = state.dimNames[featureKey] || [];
+                
+                state.featureVisibility[featureKey] = {};
+                
+                for (let d = 0; d < numDims; d++) {
+                    const name = dimNames[d] || `Dim ${d}`;
+                    state.featureVisibility[featureKey][d] = {
+                        name: name,
+                        visible: true,
+                        group: getGroup(name)
+                    };
+                }
+            });
+        }
+        
+        function getGroup(name) {
+            const lowerName = name.toLowerCase();
+            if (lowerName.startsWith('left')) return 'left';
+            if (lowerName.startsWith('right')) return 'right';
+            return 'other';
+        }
+        
+        function renderFeatureTree() {
+            const tree = document.getElementById('feature-tree');
+            tree.innerHTML = '';
+            
+            ['action', 'observation.state'].forEach(featureKey => {
+                if (!state.episodeData[featureKey]) return;
+                
+                const featureItem = document.createElement('div');
+                featureItem.className = 'tree-item';
+                
+                // Feature header
+                const header = document.createElement('div');
+                header.className = 'tree-header';
+                header.innerHTML = `
+                    <span class="expand-btn">▼</span>
+                    <input type="checkbox" checked data-feature="${featureKey}" data-type="feature">
+                    <span>${featureKey}</span>
+                `;
+                
+                const children = document.createElement('div');
+                children.className = 'tree-children';
+                children.id = `children-${featureKey.replace('.', '-')}`;
+                
+                // Group dimensions by left/right/other
+                const groups = { left: [], right: [], other: [] };
+                const visibility = state.featureVisibility[featureKey];
+                
+                Object.entries(visibility).forEach(([dimIdx, dimInfo]) => {
+                    groups[dimInfo.group].push({ idx: parseInt(dimIdx), ...dimInfo });
+                });
+                
+                // Render groups
+                ['left', 'right', 'other'].forEach(groupName => {
+                    if (groups[groupName].length === 0) return;
+                    
+                    const groupItem = document.createElement('div');
+                    groupItem.className = 'tree-item';
+                    
+                    const groupIcon = groupName === 'left' ? '🔵' : groupName === 'right' ? '🔴' : '⚪';
+                    const groupClass = `group-${groupName}`;
+                    
+                    const groupHeader = document.createElement('div');
+                    groupHeader.className = `tree-header ${groupClass}`;
+                    groupHeader.innerHTML = `
+                        <span class="expand-btn">▼</span>
+                        <input type="checkbox" checked data-feature="${featureKey}" data-group="${groupName}" data-type="group">
+                        <span>${groupIcon} ${groupName.charAt(0).toUpperCase() + groupName.slice(1)}</span>
+                    `;
+                    
+                    const groupChildren = document.createElement('div');
+                    groupChildren.className = 'tree-children';
+                    
+                    groups[groupName].forEach(dim => {
+                        const dimItem = document.createElement('div');
+                        dimItem.className = `dim-item ${dim.group}`;
+                        dimItem.innerHTML = `
+                            <input type="checkbox" ${dim.visible ? 'checked' : ''} 
+                                data-feature="${featureKey}" data-dim="${dim.idx}" data-type="dim">
+                            <span>${dim.name}</span>
+                        `;
+                        groupChildren.appendChild(dimItem);
+                    });
+                    
+                    groupItem.appendChild(groupHeader);
+                    groupItem.appendChild(groupChildren);
+                    children.appendChild(groupItem);
+                });
+                
+                featureItem.appendChild(header);
+                featureItem.appendChild(children);
+                tree.appendChild(featureItem);
+            });
+            
+            // Add event listeners
+            tree.querySelectorAll('input[type="checkbox"]').forEach(cb => {
+                cb.addEventListener('change', handleVisibilityChange);
+            });
+            
+            tree.querySelectorAll('.expand-btn').forEach(btn => {
+                btn.addEventListener('click', (e) => {
+                    const header = e.target.closest('.tree-header');
+                    const children = header.nextElementSibling;
+                    if (children && children.classList.contains('tree-children')) {
+                        children.classList.toggle('collapsed');
+                        e.target.textContent = children.classList.contains('collapsed') ? '▶' : '▼';
+                    }
+                });
+            });
+        }
+        
+        function handleVisibilityChange(e) {
+            const cb = e.target;
+            const type = cb.dataset.type;
+            const featureKey = cb.dataset.feature;
+            const checked = cb.checked;
+            
+            if (type === 'feature') {
+                // Toggle all dimensions in this feature
+                Object.keys(state.featureVisibility[featureKey]).forEach(dimIdx => {
+                    state.featureVisibility[featureKey][dimIdx].visible = checked;
+                });
+                // Update all checkboxes in this feature
+                const container = document.getElementById(`children-${featureKey.replace('.', '-')}`);
+                if (container) {
+                    container.querySelectorAll('input[type="checkbox"]').forEach(c => c.checked = checked);
+                }
+            } else if (type === 'group') {
+                const groupName = cb.dataset.group;
+                // Toggle all dimensions in this group
+                Object.entries(state.featureVisibility[featureKey]).forEach(([dimIdx, dimInfo]) => {
+                    if (dimInfo.group === groupName) {
+                        dimInfo.visible = checked;
+                    }
+                });
+                // Update dim checkboxes in this group
+                const groupChildren = cb.closest('.tree-item').querySelector('.tree-children');
+                if (groupChildren) {
+                    groupChildren.querySelectorAll('input[data-type="dim"]').forEach(c => c.checked = checked);
+                }
+            } else if (type === 'dim') {
+                const dimIdx = cb.dataset.dim;
+                state.featureVisibility[featureKey][dimIdx].visible = checked;
+            }
+            
+            updatePlots();
+        }
+        
+        function updatePlots() {
+            ['action', 'observation.state'].forEach(featureKey => {
+                const data = state.episodeData[featureKey];
+                if (!data) return;
+                
+                const plotId = featureKey === 'action' ? 'plot-action' : 'plot-state';
+                const container = document.getElementById(plotId);
+                const visibility = state.featureVisibility[featureKey];
+                
+                // Check if any dimension is visible
+                const anyVisible = Object.values(visibility).some(d => d.visible);
+                
+                if (!anyVisible) {
+                    container.classList.add('hidden');
+                    return;
+                }
+                
+                container.classList.remove('hidden');
+                
+                const traces = [];
+                
+                Object.entries(visibility).forEach(([dimIdx, dimInfo]) => {
+                    if (!dimInfo.visible) return;
+                    
+                    const idx = parseInt(dimIdx);
+                    const y = data.map(frame => frame[idx]);
+                    
+                    let color;
+                    if (dimInfo.group === 'left') color = '#3498db';
+                    else if (dimInfo.group === 'right') color = '#e74c3c';
+                    else color = undefined;  // Default Plotly colors
+                    
+                    traces.push({
+                        y: y,
+                        name: dimInfo.name,
+                        type: 'scatter',
+                        mode: 'lines',
+                        line: color ? { color: color } : undefined
+                    });
+                });
+                
+                Plotly.newPlot(plotId, traces, {
+                    title: featureKey === 'action' ? 'Action' : 'Observation State',
+                    height: 180,
+                    margin: { t: 35, b: 25, l: 45, r: 15 },
+                    showlegend: true,
+                    legend: { font: { size: 9 }, orientation: 'h', y: -0.2 }
+                });
+            });
+        }
+        
+        // Playback
+        function togglePlayback(speed) {
+            if (state.playing && state.playbackSpeed === speed) {
+                stopPlayback();
+            } else {
+                startPlayback(speed);
+            }
+        }
+        
+        function startPlayback(speed) {
+            stopPlayback();
+            state.playing = true;
+            state.playbackSpeed = speed;
+            state.frameErrorCount = 0;
+            
+            const targetInterval = Math.floor(1000 / (state.fps * speed));
+            const safeInterval = Math.max(targetInterval, 50);
+            
+            state.playbackTimer = setInterval(() => {
+                if (state.frameLoadPending) return;
+                
+                if (state.currentFrame < state.frameEnd) {
+                    state.currentFrame++;
+                    updateAllFrames(true);
+                } else {
+                    stopPlayback();
+                }
+            }, safeInterval);
+            
+            document.getElementById(`btn-${speed}x`).classList.add('active');
+        }
+        
+        function stopPlayback() {
+            state.playing = false;
+            state.frameLoadPending = false;
+            state.frameErrorCount = 0;
+            if (state.playbackTimer) {
+                clearInterval(state.playbackTimer);
+                state.playbackTimer = null;
+            }
+            document.getElementById('btn-1x').classList.remove('active');
+            document.getElementById('btn-2x').classList.remove('active');
+        }
+        
+        // Approval
+        function updateApproveButton(status) {
+            const btn = document.getElementById('btn-approve');
+            if (status === 'approved') {
+                btn.textContent = 'Unapprove';
+                btn.classList.add('approved');
+            } else {
+                btn.textContent = 'Approve';
+                btn.classList.remove('approved');
+            }
+        }
+        
+        async function toggleApproval() {
+            if (state.currentEpisode < 0) return;
+            
+            const result = await api(`/api/approve/${state.currentEpisode}`, { method: 'POST' });
+            
+            if (result.success) {
+                await loadEpisodes();
+                const ep = state.episodes[state.currentEpisode];
+                updateApproveButton(ep.status);
+                document.getElementById('episode-status').textContent = ep.status;
+            }
+        }
+        
+        // Comments
+        function showCommentDialog() {
+            document.getElementById('comment-text').focus();
+        }
+        
+        async function saveComment() {
+            if (state.currentEpisode < 0) return;
+            
+            const comment = document.getElementById('comment-text').value;
+            
+            const result = await api(`/api/comment/${state.currentEpisode}`, {
+                method: 'POST',
+                body: JSON.stringify({ comment })
+            });
+            
+            if (result.success) {
+                await loadEpisodes();
+                const ep = state.episodes[state.currentEpisode];
+                document.getElementById('episode-status').textContent = ep.status;
+            }
+        }
+        
+        // UI Helpers
+        function showLoading(show) {
+            document.getElementById('loading').classList.toggle('hidden', !show);
+        }
+        
+        // Keyboard shortcuts
+        document.addEventListener('keydown', (e) => {
+            if (e.target.tagName === 'TEXTAREA' || e.target.tagName === 'INPUT') return;
+            
+            switch (e.key) {
+                case 'ArrowLeft':
+                case 'a':
+                    if (state.currentFrame > state.frameStart) {
+                        state.currentFrame--;
+                        updateAllFrames();
+                    }
+                    break;
+                case 'ArrowRight':
+                case 'd':
+                    if (state.currentFrame < state.frameEnd) {
+                        state.currentFrame++;
+                        updateAllFrames();
+                    }
+                    break;
+                case 'ArrowUp':
+                case 'w':
+                    if (state.currentEpisode > 0) {
+                        selectEpisode(state.currentEpisode - 1);
+                    }
+                    break;
+                case 'ArrowDown':
+                case 's':
+                    if (state.currentEpisode < state.episodes.length - 1) {
+                        selectEpisode(state.currentEpisode + 1);
+                    }
+                    break;
+                case ' ':
+                    e.preventDefault();
+                    togglePlayback(1);
+                    break;
+            }
+        });
+    </script>
+</body>
+</html>

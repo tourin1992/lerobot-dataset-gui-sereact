@@ -1658,8 +1658,30 @@ class DatasetGui(QMainWindow):
         super().closeEvent(event)
 
 
-if __name__ == "__main__":
+def run_qt_app():
+    """Run the Qt desktop application."""
     app = QApplication(sys.argv)
     gui = DatasetGui()
     gui.show()
     sys.exit(app.exec())
+
+
+def run_web_app(port: int):
+    """Run the web application."""
+    from web_app import run_web_server
+    run_web_server(port)
+
+
+if __name__ == "__main__":
+    import argparse
+    
+    parser = argparse.ArgumentParser(description='LeRobot Dataset Visualizer')
+    parser.add_argument('--web', type=int, metavar='PORT', 
+                        help='Run as web server on specified port (e.g., --web 3000)')
+    
+    args = parser.parse_args()
+    
+    if args.web:
+        run_web_app(args.web)
+    else:
+        run_qt_app()
