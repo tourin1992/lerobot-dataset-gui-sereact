@@ -1,93 +1,158 @@
 # LeRobot Dataset GUI
 
-[English](README_EN.md) | 中文
+A visualization and annotation tool for LeRobot format datasets, featuring both a desktop GUI (PySide6) and a modern web interface (Flask + Plotly).
 
-一个基于 PySide6 的图形化界面工具，用于查看和编辑 LeRobot 格式的数据集。
+## Features
 
-## 功能特性
+### Web Interface (Recommended)
 
-### 数据查看
-- 支持通过 `repo_id` 从 Hugging Face Hub 或本地加载数据集
-- Episode 导航栏，支持键盘快捷键切换（W/S 或 ↑/↓）
-- 图像实时预览（支持 PIL 和 torch tensor 格式）
-- State/Action 等向量数据的多维度折线图展示
-- 维度选择器，可自由开启/关闭特定维度的显示
-- 进度条拖动切换帧（A/D 或 ←/→ 键盘控制）
-- 同步的时间轴标尺，所有图表联动显示当前帧位置
-- 异步数据加载，避免界面卡顿
+The web interface provides a modern, feature-rich experience for dataset visualization and annotation:
 
-### 数据编辑
-- **全局编辑**（对所有 episode 生效）
-  - 删除 episode
-  - 删除指定 feature
-  - 保存到新数据集
-  - ⏳ 增加指定 feature（计划中）
-- **局部编辑**（对特定 episode）
-  - 删除指定 frames（剪切）
-  - 修改指定 frame 的 feature
+**Video & Camera Visualization**
+- Multi-camera grid display with automatic layout
+- Real-time frame navigation with slider
+- Playback controls (1x, 2x speed)
+- Keyboard shortcuts for navigation
 
-## 安装与运行
+**Interactive Plots**
+- Action, Observation State, and Torque plots
+- Vertical time indicator line synchronized with video
+- Resizable plot area (drag the divider)
+- Individual plot resizing (drag handle at bottom of each plot)
+- Joint visibility tree with Left/Right grouping
+- Color-coded joints (black, green, yellow, red, blue, orange, violet)
 
-### 环境要求
+**Episode Management**
+- Episode list with status indicators
+- Approval system (mark episodes as approved)
+- Comment system for annotations
+- Task descriptions from dataset metadata
+
+### Desktop Interface
+
+The desktop GUI provides similar functionality using PySide6:
+- Episode navigation with keyboard shortcuts
+- Real-time image preview
+- Multi-dimensional line charts for State/Action data
+- Dimension selector for toggling specific dimensions
+- Synchronized timeline across all charts
+
+### Data Editing (Desktop Only)
+- **Global Editing** (applies to all episodes)
+  - Delete episodes
+  - Remove specified features
+  - Save to new dataset
+- **Local Editing** (for specific episodes)
+  - Delete specified frames (trim)
+  - Modify features for specific frames
+
+## Installation
+
+### Requirements
 - Python 3.10+
-- PySide6
-- LeRobot 0.4.2
+- FFmpeg (required for video decoding)
 
-### 安装步骤
+### Installation Steps
 
-1. 克隆仓库：
+1. Clone the repository:
    ```bash
-   git clone https://github.com/shlyang/lerobot-dataset-gui.git
+   git clone https://github.com/your-repo/lerobot-dataset-gui.git
    cd lerobot-dataset-gui
    ```
 
-2. 安装依赖：
+2. Create a virtual environment (recommended):
+   ```bash
+   python -m venv venv
+   source venv/bin/activate  # Linux/Mac
+   # or: venv\Scripts\activate  # Windows
+   ```
+
+3. Install dependencies:
    ```bash
    pip install -r requirements.txt
    ```
 
-3. 启动应用：
+4. Install FFmpeg (required for video playback):
    ```bash
-   python app.py
+   # Ubuntu/Debian
+   sudo apt install ffmpeg
+   
+   # macOS
+   brew install ffmpeg
+   
+   # Or via conda
+   conda install -c conda-forge ffmpeg
    ```
 
-## 使用说明
+## Usage
 
-### 键盘快捷键
-- `↑` / `↓`: 切换 Episode
-- `←` / `→`: 在当前 Episode 内切换 Frame
+### Web Interface (Recommended)
 
-### 基本操作
-1. 在顶部输入框输入 `repo_id`（如 `lerobot/pusht`）或本地路径
-2. 点击 `Load Dataset` 加载数据集
-3. 左侧列表显示所有 Episode，点击或使用键盘切换
-4. 中间显示当前帧的图像
-5. 右侧显示 State/Action 的折线图，使用复选框选择要显示的维度
-6. 拖动进度条或使用键盘浏览时间轴
+Start the web server:
+```bash
+python web_app.py
+```
 
-### 编辑功能
-- 右键点击 Episode 列表项可删除 episode
-- 在编辑面板中可删除 feature、剪切 frames、修改 frame 数据
-- 所有编辑操作会记录为任务，点击保存按钮统一应用到新数据集
+Then open your browser to `http://localhost:5000`
 
-## 项目结构
+**Keyboard Shortcuts:**
+- `W` / `↑`: Previous episode
+- `S` / `↓`: Next episode
+- `A` / `←`: Previous frame
+- `D` / `→`: Next frame
+- `Space`: Toggle playback (1x)
+
+### Desktop Interface
+
+Launch the desktop application:
+```bash
+python app.py
+```
+
+**Keyboard Shortcuts:**
+- `↑` / `↓`: Switch between episodes
+- `←` / `→`: Navigate frames within current episode
+
+## Project Structure
+
 ```
 lerobot-dataset-gui/
-├── app.py              # GUI 界面实现（PySide6 + PyQtGraph）
-├── processor.py        # 数据集加载与处理逻辑
-├── requirements.txt    # 项目依赖
-└── README.md          # 中文文档
+├── app.py              # Desktop GUI (PySide6 + PyQtGraph)
+├── web_app.py          # Web server (Flask)
+├── processor.py        # Dataset loading and processing logic
+├── templates/
+│   └── index.html      # Web interface (HTML/CSS/JS + Plotly)
+├── requirements.txt    # Python dependencies
+├── LICENSE             # License file
+└── README.md           # This file
 ```
 
-## 技术栈
-- **GUI 框架**: PySide6
-- **数据可视化**: PyQtGraph
-- **数据处理**: LeRobot, NumPy, PyTorch
-- **图像处理**: Pillow
+## Tech Stack
 
-## 许可证
-详见 [LICENSE](LICENSE) 文件
+- **Desktop GUI**: PySide6, PyQtGraph
+- **Web Interface**: Flask, Plotly.js
+- **Data Processing**: LeRobot, NumPy, PyTorch, Pandas
+- **Image Processing**: Pillow
+- **Video Decoding**: FFmpeg, TorchCodec
 
-## 贡献
-欢迎提交 Issue 和 Pull Request！
+## Troubleshooting
 
+### FFmpeg not found error
+If you see an error about `libavutil.so` or similar FFmpeg libraries:
+```
+RuntimeError: Could not load libtorchcodec...
+```
+Install FFmpeg using the commands in the Installation section above.
+
+### Video playback issues
+- Ensure FFmpeg is properly installed: `ffmpeg -version`
+- Check that the dataset contains valid video files
+- Try restarting the web server after installing FFmpeg
+
+## License
+
+See [LICENSE](LICENSE) file for details.
+
+## Contributing
+
+Issues and Pull Requests are welcome!
