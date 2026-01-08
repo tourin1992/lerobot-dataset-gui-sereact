@@ -250,23 +250,95 @@
         .btn-approve.approved { background: #c0392b; }
         .btn-comment { background: var(--accent-yellow); color: white; }
         
+        /* Resize Handle */
+        .resize-handle {
+            height: 6px;
+            background: var(--bg-tertiary);
+            cursor: ns-resize;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: background 0.2s;
+        }
+        
+        .resize-handle:hover,
+        .resize-handle.active {
+            background: var(--accent);
+        }
+        
+        .resize-handle::after {
+            content: '';
+            width: 40px;
+            height: 3px;
+            background: var(--text-secondary);
+            border-radius: 2px;
+        }
+        
+        .resize-handle:hover::after,
+        .resize-handle.active::after {
+            background: white;
+        }
+        
         /* Plot Area */
         .plot-area {
             flex: 0 0 auto;
-            max-height: 35vh;
+            height: 400px;
+            min-height: 100px;
+            max-height: 80vh;
             overflow-y: auto;
+            overflow-x: hidden;
             padding: 8px;
+        }
+        
+        .plot-wrapper {
+            margin-bottom: 8px;
+            overflow: visible;
+        }
+        
+        .plot-wrapper.hidden {
+            display: none;
         }
         
         .plot-container {
             background: white;
-            border-radius: 6px;
-            margin-bottom: 8px;
-            overflow: hidden;
+            border-radius: 6px 6px 0 0;
+            overflow: visible;
+            min-height: 120px;
+            height: 180px;
         }
         
         .plot-container.hidden {
             display: none;
+        }
+        
+        /* Individual plot resize handle */
+        .plot-resize-handle {
+            height: 8px;
+            background: #ddd;
+            cursor: ns-resize;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: background 0.2s;
+            border-radius: 0 0 6px 6px;
+        }
+        
+        .plot-resize-handle:hover,
+        .plot-resize-handle.active {
+            background: var(--accent);
+        }
+        
+        .plot-resize-handle::after {
+            content: '';
+            width: 30px;
+            height: 3px;
+            background: #999;
+            border-radius: 2px;
+        }
+        
+        .plot-resize-handle:hover::after,
+        .plot-resize-handle.active::after {
+            background: white;
         }
         
         /* Right Panel */
@@ -497,10 +569,23 @@
                 </div>
             </div>
             
+            <!-- Resize Handle -->
+            <div class="resize-handle" id="resize-handle"></div>
+            
             <!-- Plot Area -->
             <div class="plot-area" id="plot-area">
-                <div class="plot-container" id="plot-action"></div>
-                <div class="plot-container" id="plot-state"></div>
+                <div class="plot-wrapper">
+                    <div class="plot-container" id="plot-action"></div>
+                    <div class="plot-resize-handle" data-target="plot-action"></div>
+                </div>
+                <div class="plot-wrapper">
+                    <div class="plot-container" id="plot-state"></div>
+                    <div class="plot-resize-handle" data-target="plot-state"></div>
+                </div>
+                <div class="plot-wrapper hidden" id="plot-torque-wrapper">
+                    <div class="plot-container" id="plot-torque"></div>
+                    <div class="plot-resize-handle" data-target="plot-torque"></div>
+                </div>
             </div>
         </main>
         
@@ -571,16 +656,21 @@
             // Episode data for plots
             episodeData: null,
             dimNames: {},
+            hasTorque: false,  // Whether the dataset has torque data (16 observation states)
             // Feature visibility state
             featureVisibility: {
                 action: {},
-                'observation.state': {}
+                'observation.state': {},
+                'torque': {}
             }
         };
         
         // Initialize
         document.addEventListener('DOMContentLoaded', () => {
             loadDatasetList();
+            
+            // Initialize resize handle for plot area
+            initResizeHandle();
             
             const slider = document.getElementById('frame-slider');
             
@@ -601,6 +691,9 @@
                 state.currentFrame = parseInt(e.target.value);
                 document.getElementById('frame-info').textContent = 
                     `Frame: ${state.currentFrame - state.frameStart}/${state.frameEnd - state.frameStart}`;
+                
+                // Update vertical line on plots immediately
+                updatePlotTimeLine();
                 
                 // Load frame if not already loading one
                 if (!state.frameLoadPending) {
@@ -872,6 +965,9 @@
             document.getElementById('frame-slider').value = state.currentFrame;
             document.getElementById('frame-info').textContent = 
                 `Frame: ${state.currentFrame - state.frameStart}/${state.frameEnd - state.frameStart}`;
+            
+            // Update vertical line on plots
+            updatePlotTimeLine();
         }
         
         async function loadEpisodeData(idx) {
@@ -879,6 +975,26 @@
             
             state.episodeData = data.data || {};
             state.dimNames = data.dim_names || {};
+            state.hasTorque = data.has_torque || false;
+            
+            // Show/hide torque plot wrapper based on whether dataset has torque
+            const torqueWrapper = document.getElementById('plot-torque-wrapper');
+            const plotArea = document.getElementById('plot-area');
+            if (torqueWrapper) {
+                if (state.hasTorque) {
+                    torqueWrapper.classList.remove('hidden');
+                    // Increase plot area height to fit 3 plots without scrolling
+                    if (plotArea) {
+                        plotArea.style.height = '580px';
+                    }
+                } else {
+                    torqueWrapper.classList.add('hidden');
+                    // Reset to default height for 2 plots
+                    if (plotArea) {
+                        plotArea.style.height = '400px';
+                    }
+                }
+            }
             
             // Initialize visibility state and build feature tree
             initializeFeatureVisibility();
@@ -887,7 +1003,13 @@
         }
         
         function initializeFeatureVisibility() {
-            ['action', 'observation.state'].forEach(featureKey => {
+            const featureKeys = ['action', 'observation.state'];
+            // Add torque if present
+            if (state.hasTorque) {
+                featureKeys.push('torque');
+            }
+            
+            featureKeys.forEach(featureKey => {
                 if (!state.episodeData[featureKey]) return;
                 
                 const data = state.episodeData[featureKey];
@@ -918,7 +1040,13 @@
             const tree = document.getElementById('feature-tree');
             tree.innerHTML = '';
             
-            ['action', 'observation.state'].forEach(featureKey => {
+            const featureKeys = ['action', 'observation.state'];
+            // Add torque if present
+            if (state.hasTorque) {
+                featureKeys.push('torque');
+            }
+            
+            featureKeys.forEach(featureKey => {
                 if (!state.episodeData[featureKey]) return;
                 
                 const featureItem = document.createElement('div');
@@ -1042,25 +1170,24 @@
         }
         
         // Color palettes for each group
+        // 7 distinct colors: black, green, yellow, red, blue, orange, violet
+        const jointColors = [
+            '#000000',  // black
+            '#2ecc71',  // green
+            '#f1c40f',  // yellow
+            '#e74c3c',  // red
+            '#3498db',  // blue
+            '#e67e22',  // orange
+            '#9b59b6'   // violet
+        ];
+        
         const colorPalettes = {
-            // Blue shades for left joints
-            left: [
-                '#1abc9c', '#3498db', '#2980b9', '#00bcd4', '#0097a7',
-                '#26c6da', '#4dd0e1', '#00acc1', '#0288d1', '#039be5',
-                '#00796b', '#009688', '#4db6ac', '#26a69a', '#80cbc4'
-            ],
-            // Red/orange shades for right joints
-            right: [
-                '#e74c3c', '#c0392b', '#e91e63', '#f44336', '#ff5722',
-                '#ff7043', '#d32f2f', '#c62828', '#e53935', '#ef5350',
-                '#ff8a65', '#ff7043', '#f4511e', '#e64a19', '#d84315'
-            ],
-            // Various colors for other joints
-            other: [
-                '#9b59b6', '#8e44ad', '#673ab7', '#7c4dff', '#aa00ff',
-                '#f39c12', '#f1c40f', '#ffeb3b', '#ffc107', '#ff9800',
-                '#795548', '#607d8b', '#9e9e9e', '#8bc34a', '#cddc39'
-            ]
+            // Same 7 colors for left joints
+            left: jointColors,
+            // Same 7 colors for right joints
+            right: jointColors,
+            // Same 7 colors for other joints
+            other: jointColors
         };
         
         function getColorForDim(group, indexInGroup) {
@@ -1069,23 +1196,40 @@
         }
         
         function updatePlots() {
-            ['action', 'observation.state'].forEach(featureKey => {
+            const featureKeys = ['action', 'observation.state'];
+            // Add torque if present
+            if (state.hasTorque) {
+                featureKeys.push('torque');
+            }
+            
+            featureKeys.forEach(featureKey => {
                 const data = state.episodeData[featureKey];
                 if (!data) return;
                 
-                const plotId = featureKey === 'action' ? 'plot-action' : 'plot-state';
+                let plotId;
+                if (featureKey === 'action') {
+                    plotId = 'plot-action';
+                } else if (featureKey === 'observation.state') {
+                    plotId = 'plot-state';
+                } else if (featureKey === 'torque') {
+                    plotId = 'plot-torque';
+                }
+                
                 const container = document.getElementById(plotId);
+                if (!container) return;
+                
+                const wrapper = container.closest('.plot-wrapper');
                 const visibility = state.featureVisibility[featureKey];
                 
                 // Check if any dimension is visible
                 const anyVisible = Object.values(visibility).some(d => d.visible);
                 
                 if (!anyVisible) {
-                    container.classList.add('hidden');
+                    if (wrapper) wrapper.classList.add('hidden');
                     return;
                 }
                 
-                container.classList.remove('hidden');
+                if (wrapper) wrapper.classList.remove('hidden');
                 
                 // Count indices within each group for color assignment
                 const groupCounters = { left: 0, right: 0, other: 0 };
@@ -1099,8 +1243,14 @@
                     const y = data.map(frame => frame[idx]);
                     
                     // Get unique color based on group and position within group
-                    const color = getColorForDim(dimInfo.group, groupCounters[dimInfo.group]);
-                    groupCounters[dimInfo.group]++;
+                    let color;
+                    if (featureKey === 'torque') {
+                        // Torque plot: left = blue, right = red
+                        color = dimInfo.group === 'left' ? '#3498db' : '#e74c3c';
+                    } else {
+                        color = getColorForDim(dimInfo.group, groupCounters[dimInfo.group]);
+                        groupCounters[dimInfo.group]++;
+                    }
                     
                     traces.push({
                         y: y,
@@ -1111,13 +1261,66 @@
                     });
                 });
                 
+                // Use current container height or default
+                const plotHeight = container.offsetHeight || 180;
+                
+                // Calculate current frame position relative to episode start (for vertical line)
+                const currentFrameInEpisode = state.currentFrame - state.frameStart;
+                
+                // Determine plot title
+                let plotTitle;
+                if (featureKey === 'action') {
+                    plotTitle = 'Action';
+                } else if (featureKey === 'observation.state') {
+                    plotTitle = 'Observation State';
+                } else if (featureKey === 'torque') {
+                    plotTitle = 'Torque';
+                }
+                
                 Plotly.newPlot(plotId, traces, {
-                    title: featureKey === 'action' ? 'Action' : 'Observation State',
-                    height: 180,
+                    title: plotTitle,
+                    height: plotHeight,
                     margin: { t: 35, b: 25, l: 45, r: 15 },
                     showlegend: true,
-                    legend: { font: { size: 9 }, orientation: 'h', y: -0.2 }
+                    legend: { font: { size: 9 }, orientation: 'h', y: -0.2 },
+                    // Add vertical line shape for current frame
+                    shapes: [{
+                        type: 'line',
+                        x0: currentFrameInEpisode,
+                        x1: currentFrameInEpisode,
+                        y0: 0,
+                        y1: 1,
+                        yref: 'paper',
+                        line: {
+                            color: '#e94560',
+                            width: 2,
+                            dash: 'solid'
+                        }
+                    }]
+                }, {
+                    responsive: true
                 });
+            });
+        }
+        
+        // Update vertical line position on plots
+        function updatePlotTimeLine() {
+            const currentFrameInEpisode = state.currentFrame - state.frameStart;
+            
+            const plotIds = ['plot-action', 'plot-state'];
+            // Add torque plot if present
+            if (state.hasTorque) {
+                plotIds.push('plot-torque');
+            }
+            
+            plotIds.forEach(plotId => {
+                const plotEl = document.getElementById(plotId);
+                if (plotEl && plotEl.data) {
+                    Plotly.relayout(plotId, {
+                        'shapes[0].x0': currentFrameInEpisode,
+                        'shapes[0].x1': currentFrameInEpisode
+                    });
+                }
             });
         }
         
@@ -1215,6 +1418,177 @@
         // UI Helpers
         function showLoading(show) {
             document.getElementById('loading').classList.toggle('hidden', !show);
+        }
+        
+        // Resize handle for plot area
+        function initResizeHandle() {
+            const resizeHandle = document.getElementById('resize-handle');
+            const plotArea = document.getElementById('plot-area');
+            const mainContent = document.querySelector('.main-content');
+            
+            let isResizing = false;
+            let startY = 0;
+            let startHeight = 0;
+            
+            resizeHandle.addEventListener('mousedown', (e) => {
+                isResizing = true;
+                startY = e.clientY;
+                startHeight = plotArea.offsetHeight;
+                resizeHandle.classList.add('active');
+                document.body.style.cursor = 'ns-resize';
+                document.body.style.userSelect = 'none';
+                e.preventDefault();
+            });
+            
+            document.addEventListener('mousemove', (e) => {
+                if (!isResizing) return;
+                
+                const deltaY = startY - e.clientY;
+                const newHeight = Math.max(100, Math.min(startHeight + deltaY, window.innerHeight * 0.7));
+                plotArea.style.height = newHeight + 'px';
+                
+                // Trigger Plotly resize to adjust plot dimensions
+                if (window.Plotly) {
+                    const actionPlot = document.getElementById('plot-action');
+                    const statePlot = document.getElementById('plot-state');
+                    const torquePlot = document.getElementById('plot-torque');
+                    if (actionPlot && actionPlot.data) Plotly.Plots.resize(actionPlot);
+                    if (statePlot && statePlot.data) Plotly.Plots.resize(statePlot);
+                    if (torquePlot && torquePlot.data) Plotly.Plots.resize(torquePlot);
+                }
+            });
+            
+            document.addEventListener('mouseup', () => {
+                if (isResizing) {
+                    isResizing = false;
+                    resizeHandle.classList.remove('active');
+                    document.body.style.cursor = '';
+                    document.body.style.userSelect = '';
+                }
+            });
+            
+            // Touch support
+            resizeHandle.addEventListener('touchstart', (e) => {
+                isResizing = true;
+                startY = e.touches[0].clientY;
+                startHeight = plotArea.offsetHeight;
+                resizeHandle.classList.add('active');
+                e.preventDefault();
+            });
+            
+            document.addEventListener('touchmove', (e) => {
+                if (!isResizing) return;
+                
+                const deltaY = startY - e.touches[0].clientY;
+                const newHeight = Math.max(100, Math.min(startHeight + deltaY, window.innerHeight * 0.7));
+                plotArea.style.height = newHeight + 'px';
+            });
+            
+            document.addEventListener('touchend', () => {
+                if (isResizing) {
+                    isResizing = false;
+                    resizeHandle.classList.remove('active');
+                }
+            });
+            
+            // Initialize individual plot resize handles
+            initPlotResizeHandles();
+        }
+        
+        // Individual plot resize handles
+        function initPlotResizeHandles() {
+            const plotResizeHandles = document.querySelectorAll('.plot-resize-handle');
+            
+            let activeHandle = null;
+            let startY = 0;
+            let startHeight = 0;
+            let targetPlot = null;
+            
+            plotResizeHandles.forEach(handle => {
+                handle.addEventListener('mousedown', (e) => {
+                    activeHandle = handle;
+                    const targetId = handle.dataset.target;
+                    targetPlot = document.getElementById(targetId);
+                    
+                    startY = e.clientY;
+                    startHeight = targetPlot.offsetHeight;
+                    handle.classList.add('active');
+                    document.body.style.cursor = 'ns-resize';
+                    document.body.style.userSelect = 'none';
+                    e.preventDefault();
+                    e.stopPropagation();
+                });
+                
+                handle.addEventListener('touchstart', (e) => {
+                    activeHandle = handle;
+                    const targetId = handle.dataset.target;
+                    targetPlot = document.getElementById(targetId);
+                    
+                    startY = e.touches[0].clientY;
+                    startHeight = targetPlot.offsetHeight;
+                    handle.classList.add('active');
+                    e.preventDefault();
+                });
+            });
+            
+            document.addEventListener('mousemove', (e) => {
+                if (!activeHandle || !targetPlot) return;
+                
+                const deltaY = e.clientY - startY;
+                const newHeight = Math.max(120, Math.min(startHeight + deltaY, 600));
+                targetPlot.style.height = newHeight + 'px';
+                
+                // Resize the Plotly chart - use relayout with autosize
+                if (window.Plotly && targetPlot.data) {
+                    Plotly.relayout(targetPlot, { 
+                        height: newHeight,
+                        autosize: true
+                    });
+                }
+            });
+            
+            document.addEventListener('touchmove', (e) => {
+                if (!activeHandle || !targetPlot) return;
+                
+                const deltaY = e.touches[0].clientY - startY;
+                const newHeight = Math.max(120, Math.min(startHeight + deltaY, 600));
+                targetPlot.style.height = newHeight + 'px';
+                
+                if (window.Plotly && targetPlot.data) {
+                    Plotly.relayout(targetPlot, { 
+                        height: newHeight,
+                        autosize: true
+                    });
+                }
+            });
+            
+            document.addEventListener('mouseup', () => {
+                if (activeHandle) {
+                    // Final resize to ensure proper fit
+                    if (targetPlot && window.Plotly && targetPlot.data) {
+                        const finalHeight = targetPlot.offsetHeight;
+                        Plotly.relayout(targetPlot, { height: finalHeight });
+                    }
+                    activeHandle.classList.remove('active');
+                    activeHandle = null;
+                    targetPlot = null;
+                    document.body.style.cursor = '';
+                    document.body.style.userSelect = '';
+                }
+            });
+            
+            document.addEventListener('touchend', () => {
+                if (activeHandle) {
+                    // Final resize to ensure proper fit
+                    if (targetPlot && window.Plotly && targetPlot.data) {
+                        const finalHeight = targetPlot.offsetHeight;
+                        Plotly.relayout(targetPlot, { height: finalHeight });
+                    }
+                    activeHandle.classList.remove('active');
+                    activeHandle = null;
+                    targetPlot = null;
+                }
+            });
         }
         
         // Keyboard shortcuts

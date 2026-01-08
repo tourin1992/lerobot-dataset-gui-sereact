@@ -296,7 +296,26 @@ class WebDatasetViewer:
                 feature_info = self.processor.dataset.meta.features.get(k, {})
                 dim_names[k] = feature_info.get('names', [])
             
-            return {"data": result, "dim_names": dim_names}
+            # Check if observation.state has 16 dimensions (14 position + 2 torque)
+            has_torque = False
+            torque_names = []
+            if 'observation.state' in result and 'observation.state' in dim_names:
+                obs_state_data = result['observation.state']
+                obs_state_names = dim_names['observation.state']
+                
+                # Check if we have 16 dimensions
+                if obs_state_data and len(obs_state_data[0]) == 16:
+                    has_torque = True
+                    # Extract torque data (last 2 dimensions)
+                    result['torque'] = [[frame[14], frame[15]] for frame in obs_state_data]
+                    torque_names = obs_state_names[14:16] if len(obs_state_names) >= 16 else ['left_torque', 'right_torque']
+                    dim_names['torque'] = torque_names
+                    
+                    # Keep only first 14 dimensions for observation.state
+                    result['observation.state'] = [frame[:14] for frame in obs_state_data]
+                    dim_names['observation.state'] = obs_state_names[:14] if len(obs_state_names) >= 14 else obs_state_names
+            
+            return {"data": result, "dim_names": dim_names, "has_torque": has_torque}
         except Exception as e:
             print(f"Error getting episode data: {e}")
             return {}

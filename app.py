@@ -894,16 +894,54 @@ class DatasetGui(QMainWindow):
         target_keys = ['observation.state', 'action', 'next.reward', 'next.done', 'next.success']
         self.vector_keys = [k for k in target_keys if k in dataset.meta.features]
         
+        # Check if observation.state has 16 dimensions (14 position + 2 torque)
+        # If so, we'll add a separate 'torque' key
         sample = dataset[0]
+        obs_state = sample.get('observation.state', None)
+        has_torque = False
+        if obs_state is not None:
+            obs_state_np = obs_state.numpy() if hasattr(obs_state, 'numpy') else np.array(obs_state)
+            if obs_state_np.shape[0] == 16:
+                # Add torque as a separate key for visualization
+                self.vector_keys.append('torque')
+                has_torque = True
+        
+        # Adjust center splitter to show all plots without scrolling
+        if has_torque:
+            # More space for plots when we have 3 plots
+            self.center_splitter.setSizes([350, 600])
+        else:
+            # Default sizes for 2 plots
+            self.center_splitter.setSizes([400, 500])
+        
         for k in self.vector_keys:
-            val = sample[k]
-            # Convert to numpy to get shape
-            v_np = val.numpy() if hasattr(val, 'numpy') else np.array(val)
-            dims = v_np.shape[0] if v_np.ndim > 0 else 1
-            
-            # Get dimension names from metadata if available
-            feature_info = dataset.meta.features.get(k, {})
-            dim_names = feature_info.get('names', [])
+            # Handle special 'torque' key (last 2 dimensions of observation.state when it has 16 dims)
+            if k == 'torque':
+                obs_state = sample.get('observation.state')
+                if obs_state is None:
+                    continue
+                v_np = obs_state.numpy() if hasattr(obs_state, 'numpy') else np.array(obs_state)
+                if v_np.shape[0] != 16:
+                    continue
+                dims = 2  # Only the last 2 dimensions for torque
+                # Get dimension names for torque from observation.state metadata
+                feature_info = dataset.meta.features.get('observation.state', {})
+                all_names = feature_info.get('names', [])
+                dim_names = all_names[14:16] if len(all_names) >= 16 else ['left_torque', 'right_torque']
+            else:
+                val = sample[k]
+                # Convert to numpy to get shape
+                v_np = val.numpy() if hasattr(val, 'numpy') else np.array(val)
+                dims = v_np.shape[0] if v_np.ndim > 0 else 1
+                
+                # Get dimension names from metadata if available
+                feature_info = dataset.meta.features.get(k, {})
+                dim_names = feature_info.get('names', [])
+                
+                # If observation.state has 16 dimensions, only show first 14 (positions)
+                if k == 'observation.state' and dims == 16:
+                    dims = 14
+                    dim_names = dim_names[:14] if len(dim_names) >= 14 else dim_names
             
             # Create Tree Item
             parent = QTreeWidgetItem(self.feature_tree)
@@ -1487,19 +1525,44 @@ class DatasetGui(QMainWindow):
         
         # Update Plot Curves
         for k in self.vector_keys:
-            if k not in data:
-                continue
-            raw_val = data[k]
-            # 3. 核心修复：数据转换 (T, D) 或 (T,)
-            # 处理布尔值和标量
-            if raw_val.dtype == bool:
-                plot_data = raw_val.astype(np.float32)
+            # Handle special 'torque' key
+            if k == 'torque':
+                if 'observation.state' not in data:
+                    continue
+                raw_val = data['observation.state']
+                if raw_val.dtype == bool:
+                    plot_data = raw_val.astype(np.float32)
+                else:
+                    plot_data = raw_val.astype(np.float32)
+                
+                if plot_data.ndim == 1:
+                    continue  # Can't have torque if 1D
+                
+                # Check if we have 16 dimensions
+                if plot_data.shape[1] != 16:
+                    continue
+                
+                # Extract only the last 2 dimensions (torque)
+                plot_data = plot_data[:, 14:16]
             else:
-                plot_data = raw_val.astype(np.float32)
+                if k not in data:
+                    continue
+                raw_val = data[k]
+                # 3. 核心修复：数据转换 (T, D) 或 (T,)
+                # 处理布尔值和标量
+                if raw_val.dtype == bool:
+                    plot_data = raw_val.astype(np.float32)
+                else:
+                    plot_data = raw_val.astype(np.float32)
+                
+                # 确保是 2D 数组 (T, D)
+                if plot_data.ndim == 1:
+                    plot_data = plot_data.reshape(-1, 1)
+                
+                # If observation.state has 16 dimensions, only show first 14 (positions)
+                if k == 'observation.state' and plot_data.shape[1] == 16:
+                    plot_data = plot_data[:, :14]
             
-            # 确保是 2D 数组 (T, D)
-            if plot_data.ndim == 1:
-                plot_data = plot_data.reshape(-1, 1)
             pw = self.plots[k]
             # Clear old curves
             for c in self.plot_curves.get(k, []): 
@@ -1508,7 +1571,12 @@ class DatasetGui(QMainWindow):
             
             # Create new curves for each dimension
             for d in range(plot_data.shape[1]):
-                curve = pg.PlotDataItem(plot_data[:, d], pen=pg.mkPen(color=pg.intColor(d), width=1.5))
+                # Use specific colors for torque plot: left = blue, right = red
+                if k == 'torque':
+                    color = '#3498db' if d == 0 else '#e74c3c'  # blue for left, red for right
+                else:
+                    color = pg.intColor(d)
+                curve = pg.PlotDataItem(plot_data[:, d], pen=pg.mkPen(color=color, width=1.5))
                 pw.addItem(curve)
                 self.plot_curves[k].append(curve)
                 
